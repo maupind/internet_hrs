@@ -6,30 +6,34 @@ editor: visual
 
 ```{r}
 library(tidyverse)
+library(dplyr)
 library(haven)
 library(MatchIt)
 library(optmatch)
 library(lavaan)
 library(semTools)
 library(rstan)
-library(shinystan)
+#library(shinystan)
 library(survival)
 library(coda)
-library(rjags)
+#library(rjags)
 library(pROC)
 library(ggplot2)
 library(flextable)
+library(mice)
+library(posterior)
 ```
-# Importing and Cleaning 
 
+# Importing and Cleaning
 
-
+read_sav("/path/to/your/data/H_HRS_d.sav") read_sav("/path/to/your/data/randhrs1992_2020v2.sav")
 
 ```{r}
-H_HRS_d <- read_sav("/path/to/your/data/H_HRS_d.sav")
+H_HRS_d <- read_sav("/home/danny/Documents/projects/aadl_hrs/hrs/H_HRS_d.sav")
 
 
-randhrs1992_2020v2 <- read_sav("/path/to/your/data/randhrs1992_2020v2.sav") %>% 
+
+randhrs1992_2020v2 <- read_sav("/home/danny/Documents/projects/aadl_hrs/randhrs1992_2020v2_SPSS/randhrs1992_2020v2.sav") %>% 
   # Combining the two different forms of cognitive testing 
   mutate(r14imrc = ifelse(!is.na(R14IMRCP), R14IMRCP, R14IMRCW)) %>% 
   mutate(r15imrc = ifelse(!is.na(R15IMRCP), R15IMRCP, R15IMRCW)) %>% 
@@ -43,8 +47,9 @@ randhrs1992_2020v2 <- read_sav("/path/to/your/data/randhrs1992_2020v2.sav") %>%
   mutate(r14bwc20 = ifelse(!is.na(R14BWC20P), R14BWC20P, R14BWC20W)) %>% 
   mutate(r15bwc20 = ifelse(!is.na(R15BWC20P), R15BWC20P, R15BWC20W)) 
 
+data_lw <- read_dta("/home/danny/Documents/projects/aadl_hrs/cogfinalimp_9520wide.dta")
 
-rand <- randhrs1992_2020v2 %>% 
+rand <- randhrs1992_2020v2%>% 
   dplyr::select(
     HHIDPN,
     RAGENDER,
@@ -62,6 +67,7 @@ rand <- randhrs1992_2020v2 %>%
     contains("diab"),
     contains("cancr"),
     contains("lung"),
+    contains("conde"),
     contains("heart"),
     contains("strok"),
     contains("arthr")
@@ -84,35 +90,295 @@ rand <- randhrs1992_2020v2 %>%
 colnames(rand) <- tolower(colnames(rand))
 
 # Only individuals with interviews from wave 6 to 15
-hrs_email <- H_HRS_d %>% 
-  subset(r6iwmode != 0 &
-           r7iwmode != 0 &
-           r8iwmode != 0 &
-           r9iwmode != 0 &
-           r10iwmode != 0 &
-           r11iwmode != 0 &
-           r12iwmode != 0 &
-           r13iwmode != 0 &
-           r14iwmode != 0 &
-           r15iwmode != 0)
+hrs_email <- H_HRS_d
+# %>% 
+#    subset(r6iwmode != 0 &
+#             r7iwmode != 0 &
+#             r8iwmode != 0 &
+#             r9iwmode != 0 &
+#             r10iwmode != 0 &
+#             r11iwmode != 0 &
+#             r12iwmode != 0 &
+#             r13iwmode != 0 &
+#             r14iwmode != 0 &
+#             r15iwmode != 0)
 
 rand_hrs <- inner_join(rand, hrs_email, by = "hhidpn")
+#rm(randhrs1992_2020v2)
+rm(hrs_email)
+#rm(rand)
+gc()
+```
+
+```{r}
+
+
+data_lw <- data_lw %>% 
+  dplyr::select(
+    hhid,
+    pn,
+    cogtot27_imp2002,
+    cogtot27_imp2004,
+    cogtot27_imp2006,
+    cogtot27_imp2008,
+    cogtot27_imp2010,
+    cogtot27_imp2012,
+    cogtot27_imp2014,
+    cogtot27_imp2016,
+    cogtot27_imp2018,
+    cogtot27_imp2020,
+    prxyscore_imp2002,
+    prxyscore_imp2004,
+    prxyscore_imp2006,
+    prxyscore_imp2008,
+    prxyscore_imp2010,
+    prxyscore_imp2012,
+    prxyscore_imp2014,
+    prxyscore_imp2016,
+    prxyscore_imp2018,
+    prxyscore_imp2020,
+    cogfunction2002,
+    cogfunction2004,
+    cogfunction2006,
+    cogfunction2008,
+    cogfunction2010,
+    cogfunction2012,
+    cogfunction2014,
+    cogfunction2016,
+    cogfunction2018,
+    cogfunction2020
+  )
+
+data_lw$hhidpn <- paste(data_lw$hhid, data_lw$pn, sep = "")
+
+data_lw <- data_lw %>% 
+   filter(is.na(cogtot27_imp2002)) %>% 
+  filter(is.na(cogtot27_imp2004)) %>% 
+  filter(is.na(cogtot27_imp2006)) %>% 
+  filter(is.na(cogtot27_imp2008)) %>% 
+  filter(is.na(cogtot27_imp2010)) %>% 
+  filter(is.na(cogtot27_imp2012)) %>% 
+  filter(is.na(cogtot27_imp2014)) %>% 
+  filter(is.na(cogtot27_imp2016)) %>% 
+  filter(is.na(cogtot27_imp2018)) %>% 
+  filter(is.na(cogtot27_imp2020))  
+
+
+data_lw <- data_lw %>% 
+  mutate(cogfunction2002 = ifelse(cogfunction2002 >= 2, 1, 0)) %>%
+  mutate(cogfunction2004 = ifelse(cogfunction2004 >= 2, 1, 0)) %>%
+  mutate(cogfunction2006 = ifelse(cogfunction2006 >= 2, 1, 0)) %>%
+  mutate(cogfunction2008 = ifelse(cogfunction2008 >= 2, 1, 0)) %>%
+  mutate(cogfunction2010 = ifelse(cogfunction2010 >= 2, 1, 0)) %>%
+  mutate(cogfunction2012 = ifelse(cogfunction2012 >= 2, 1, 0)) %>%
+  mutate(cogfunction2014 = ifelse(cogfunction2014 >= 2, 1, 0)) %>%
+  mutate(cogfunction2016 = ifelse(cogfunction2016 >= 2, 1, 0)) %>%
+  mutate(cogfunction2018 = ifelse(cogfunction2018 >= 2, 1, 0)) %>%
+  mutate(cogfunction2020 = ifelse(cogfunction2020 >= 2, 1, 0))
+
+
+rand_hrs$hhidpn <- as.character(rand_hrs$hhidpn)
+
 
 ```
 
-# Email Use
-
-## Filtering and variable selection
 ```{r}
-# Filter by age if needed
-rand_hrs_age <- rand_hrs 
-#%>% 
- # filter(r6agey_e >= 65)
+# rand_hrs <- rand_hrs %>%  
+#   mutate(r6conde = as.numeric(r6hibp + r6diab + r6cancr + r6lung + r6heart + r6strok + r6arthr)) %>%
+#   mutate(r7conde = as.numeric(r7hibp + r7diab + r7cancr + r7lung + r7heart + r7strok + r7arthr)) %>%
+#   mutate(r8conde = as.numeric(r8hibp + r8diab + r8cancr + r8lung + r8heart + r8strok + r8arthr)) %>%
+#   mutate(r9conde = as.numeric(r9hibp + r9diab + r9cancr + r9lung + r9heart + r9strok + r9arthr)) %>% 
+#   mutate(r10conde = as.numeric(r10hibp + r10diab + r10cancr + r10lung + r10heart + r10strok + r10arthr)) %>% 
+#   mutate(r11conde = as.numeric(r11hibp + r11diab + r11cancr + r11lung + r11heart + r11strok + r11arthr)) %>% 
+#   mutate(r12conde = as.numeric(r12hibp + r12diab + r12cancr + r12lung + r12heart + r12strok + r12arthr)) %>% 
+#   mutate(r13conde = as.numeric(r13hibp + r13diab + r13cancr + r13lung + r13heart + r13strok + r13arthr)) %>%
+#   mutate(r14conde = as.numeric(r14hibp + r14diab + r14cancr + r14lung + r14heart + r14strok + r14arthr)) %>% 
+#   mutate(r15conde = as.numeric(r15hibp + r15diab + r15cancr + r15lung + r15heart + r15strok + r15arthr))
 
-rand_hrs_email <- rand_hrs_age %>% 
-  filter(!is.na(r6email))
+rand_hrs <- rand_hrs %>% 
 
-rand_hrs_email <- rand_hrs_email %>% 
+  mutate(r6ticsx = r6imrc + r6dlrc + r6ser7 + r6bwc20) %>% 
+  mutate(r7ticsx = r7imrc + r7dlrc + r7ser7 + r7bwc20) %>% 
+  mutate(r8ticsx = r8imrc + r8dlrc + r8ser7 + r8bwc20) %>% 
+  mutate(r9ticsx = r9imrc + r9dlrc + r9ser7 + r9bwc20) %>% 
+  mutate(r10ticsx = r10imrc + r10dlrc + r10ser7 + r10bwc20) %>% 
+  mutate(r11ticsx = r11imrc + r11dlrc + r11ser7 + r11bwc20) %>% 
+  mutate(r12ticsx = r12imrc + r12dlrc + r12ser7 + r12bwc20) %>% 
+  mutate(r13ticsx = r13imrc + r13dlrc + r13ser7 + r13bwc20) %>%
+  mutate(r14ticsx = r14imrc + r14dlrc + r14ser7 + r14bwc20) %>%
+  mutate(r15ticsx = r15imrc + r15dlrc + r15ser7 + r15bwc20) 
+
+rand_hrs <-  rand_hrs %>% 
+  mutate(r6tics = ifelse(r6ticsx < 12, 1, 0)) %>%
+  mutate(r7tics = ifelse(r7ticsx < 12, 1, 0)) %>%
+  mutate(r8tics = ifelse(r8ticsx < 12, 1, 0)) %>%
+  mutate(r9tics = ifelse(r9ticsx < 12, 1, 0)) %>%
+  mutate(r10tics = ifelse(r10ticsx < 12, 1, 0)) %>%
+  mutate(r11tics = ifelse(r11ticsx < 12, 1, 0)) %>%
+  mutate(r12tics = ifelse(r12ticsx < 12, 1, 0)) %>%
+  mutate(r13tics = ifelse(r13ticsx < 12, 1, 0)) %>%
+  mutate(r14tics = ifelse(r14ticsx < 12, 1, 0)) %>%
+  mutate(r15tics = ifelse(r15ticsx  < 12, 1, 0))
+
+df_combined <- full_join(
+  rand_hrs,
+  data_lw,
+  by = "hhidpn"
+)
+
+df_combined <- df_combined %>%
+  mutate(
+    final_2002 = coalesce(r6tics, cogfunction2002),
+    final_2004 = coalesce(r7tics, cogfunction2004),
+    final_2006 = coalesce(r8tics, cogfunction2006),
+    final_2008 = coalesce(r9tics, cogfunction2008),
+    final_2010 = coalesce(r10tics, cogfunction2010),
+    final_2012 = coalesce(r11tics, cogfunction2012),
+    final_2014 = coalesce(r12tics, cogfunction2014),
+    final_2016 = coalesce(r13tics, cogfunction2016),
+    final_2018 = coalesce(r14tics, cogfunction2018),
+    final_2020 = coalesce(r15tics, cogfunction2020)
+  )
+
+df_combined %>%
+  summarise(
+    r6tics_NA = sum(is.na(r6tics)),
+    r6tics_nonNA = sum(!is.na(r6tics)),
+    cogfunction2002_NA = sum(is.na(cogfunction2002)),
+    cogfunction2002_nonNA = sum(!is.na(cogfunction2002)),
+    final_NA = sum(is.na(final_2002)),
+    final_nonNA = sum(!is.na(final_2002))
+  )
+sum(is.na(df_combined$r6tics) & !is.na(df_combined$cogfunction2002))  
+
+
+
+df_combined <- df_combined %>% 
+  dplyr::select(!r6tics) %>% 
+  dplyr::select(!r7tics) %>% 
+  dplyr::select(!r8tics) %>% 
+  dplyr::select(!r9tics) %>% 
+  dplyr::select(!r10tics) %>% 
+  dplyr::select(!r11tics) %>% 
+  dplyr::select(!r12tics) %>% 
+  dplyr::select(!r13tics) %>% 
+  dplyr::select(!r14tics) %>% 
+  dplyr::select(!r15tics)
+
+df_combined <- df_combined %>% 
+  rename(
+    r6tics = final_2002,
+    r7tics = final_2004,
+    r8tics = final_2006,
+    r9tics = final_2008,
+    r10tics = final_2010,
+    r11tics = final_2012,
+    r12tics = final_2014,
+    r13tics = final_2016,
+    r14tics = final_2018,
+    r15tics = final_2020
+  )
+  
+
+```
+
+```{r}
+vars_to_impute <- c(
+  "r6cesd",
+  "r7cesd",
+  "r8cesd",
+  "r9cesd",
+  "r10cesd",
+  "r11cesd",
+  "r12cesd",
+  "r13cesd",
+  "r14cesd",
+  "r15cesd",
+
+  "r6conde",
+  "r7conde",
+  "r8conde",
+  "r9conde",
+  "r10conde",
+  "r11conde",
+  "r12conde",
+  "r13conde",
+  "r14conde",
+  "r15conde",
+
+
+  "r6iadltot_h",
+  "r7iadltot_h",
+  "r8iadltot_h",
+  "r9iadltot_h",
+  "r10iadltot_h",
+  "r11iadltot_h",
+  "r12iadltot_h",
+  "r13iadltot_h",
+  "r14iadltot_h",
+  "r15iadltot_h",
+
+
+  "r6adltot6",
+  "r7adltot6",
+  "r8adltot6",
+  "r9adltot6",
+  "r10adltot6",
+  "r11adltot6",
+  "r12adltot6",
+  "r13adltot6",
+  "r14adltot6",
+  "r15adltot6",
+    "raracem",
+  "raeducl",
+  "ragender"
+
+  # "r6tics",
+  #   "r7tics",
+  #   "r8tics",
+  #   "r9tics",
+  #   "r10tics",
+  #   "r11tics",
+  #   "r12tics",
+  #   "r13tics",
+  #   "r14tics",
+  #   "r15tics"
+
+  # "r6dlrc",
+  #   "r7dlrc",
+  #   "r8dlrc",
+  #   "r9dlrc",
+  #   "r10dlrc",
+  #   "r11dlrc",
+  #   "r12dlrc",
+  #   "r13dlrc",
+  #   "r14dlrc",
+  #   "r15dlrc",
+  #
+  # "r6ser7",
+  #   "r7ser7",
+  #   "r8ser7",
+  #   "r9ser7",
+  #   "r10ser7",
+  #   "r11ser7",
+  #   "r12ser7",
+  #   "r13ser7",
+  #   "r14ser7",
+  #   "r15ser7",
+  #
+  # "r6bwc20",
+  #   "r7bwc20",
+  #   "r8bwc20",
+  #   "r9bwc20",
+  #   "r10bwc20",
+  #   "r11bwc20",
+  #   "r12bwc20",
+  #   "r13bwc20",
+  #   "r14bwc20",
+  #   "r15bwc20"
+)
+
+rand_hrs <- df_combined %>%
   dplyr::select(
     hhidpn,
     ragender,
@@ -129,7 +395,7 @@ rand_hrs_email <- rand_hrs_email %>%
     starts_with("r13"),
     starts_with("r14"),
     starts_with("r15")
-    ) %>% 
+    ) %>%
   dplyr::select(
     hhidpn,
     ragender,
@@ -161,6 +427,7 @@ rand_hrs_email <- rand_hrs_email %>%
     contains("orient"),
     contains("ser7"),
     contains("imrc"),
+    contains("cond"),
     contains("dlrc"),
     contains("cesd"),
     contains("hibp"),
@@ -171,183 +438,291 @@ rand_hrs_email <- rand_hrs_email %>%
     contains("strok"),
     contains("arthr"),
     contains("raracem"),
-    contains("bwc20")
+    contains("bwc20"),
+    contains("tics")
   )
-  
 
-rand_hrs_email <- rand_hrs_email %>% 
-  dplyr::select(!contains("smok")) %>% 
-  dplyr::select(!contains("mammo")) %>% 
-  dplyr::select(!contains("mom")) %>% 
-  dplyr::select(!contains("cmode")) %>% 
-  dplyr::select(!contains("money")) %>% 
-  dplyr::select(!contains("promot")) %>% 
-  dplyr::select(!contains("mov")) %>% 
-  dplyr::select(!contains("mon")) %>% 
+rand_hrs <- rand_hrs %>%
+  dplyr::select(!contains("smok")) %>%
+  dplyr::select(!contains("mammo")) %>%
+  dplyr::select(!contains("mom")) %>%
+  dplyr::select(!contains("cmode")) %>%
+  dplyr::select(!contains("money")) %>%
+  dplyr::select(!contains("promot")) %>%
+  dplyr::select(!contains("mov")) %>%
+  dplyr::select(!contains("mon")) %>%
   dplyr::select(!contains("fmo")) %>%
   dplyr::select(!contains("fdy")) %>%
-  dplyr::select(!contains("fyr")) %>% 
+  dplyr::select(!contains("fyr")) %>%
   dplyr::select(!contains("mobm")) %>%
   dplyr::select(!contains("moba")) %>%
   dplyr::select(!contains("sevm")) %>%
   dplyr::select(!contains("seva")) %>%
-  dplyr::select(!contains("forient")) %>% 
-  dplyr::select(!contains("hlp")) %>% 
-  dplyr::select(!contains("wendy")) %>% 
-  dplyr::select(!contains("jpd")) %>% 
-  dplyr::select(!contains("ret")) %>% 
-  dplyr::select(!contains("cmp")) %>% 
-  dplyr::select(!contains("pln")) %>% 
+  dplyr::select(!contains("forient")) %>%
+  dplyr::select(!contains("hlp")) %>%
+  dplyr::select(!contains("wendy")) %>%
+  dplyr::select(!contains("jpd")) %>%
+  dplyr::select(!contains("ret")) %>%
+  dplyr::select(!contains("cmp")) %>%
+  dplyr::select(!contains("pln")) %>%
   dplyr::select(!contains("mcr"))
 
-gc()
+```
+
+```{r}
+ gc()
+
+#  library("labelled")
+#  library("miceadds")
+#  rand_hrs <- remove_labels(rand_hrs)
+#  meth  <- rep("", ncol(rand_hrs))
+#  names(meth) <- names(rand_hrs)
+#  meth[vars_to_impute] <- "2l.pmm"
+# 
+#  pred <- make.predictorMatrix(rand_hrs)
+#  diag(pred) <- 0
+#  cluster <- rand_hrs$hhidpn
+#  rows_not_imputed <- setdiff(names(rand_hrs), vars_to_impute)
+#  pred[rows_not_imputed, ] <- 0
+# 
+# 
+# 
+# 
+# #
+# #
+#  imputed_data <- mice(rand_hrs, method = meth, predictorMatrix = pred, m = 1,
+#                       cluster = cluster)
+#  rm(rand_hrs_data)
+#  gc()
+#  rand_hrs_jags_impute <- complete(imputed_data, 1)
+# # 48 rows droppped as not enough information kept to be imputedv
+# na_rows <- which(is.na(rand_hrs_jags_impute$raeducl))
+# rand_hrs_jags_impute <- rand_hrs_jags_impute[-na_rows, ]
+# 
+# imputed_list <- lapply(1:5, function(i) complete(imputed_data, i))
+```
+
+```{r}
+clean_df <- rand_hrs %>%
+  pivot_longer(
+    cols = ends_with("tics"),
+    names_to = "wave",
+    values_to = "outcome"
+  ) %>%
+  mutate(
+    wave_num = as.numeric(gsub("r(\\d+)tics", "\\1", wave))
+  ) %>%
+  filter(!is.na(outcome)) %>%
+  # 2. Compute first wave of participation
+  group_by(hhidpn) %>%
+  mutate(first_wave = min(wave_num, na.rm = TRUE)) %>%
+  ungroup() %>%
+  # 3. Compute time since entry
+  mutate(tt_since_entry = wave_num - first_wave) %>%
+  # 4. Keep participants with at least 2 waves
+  group_by(hhidpn) %>%
+  filter(n() >= 2) %>%
+  # 5. Remove participants with outcome in first 3 waves since entry
+  filter(!any(outcome[tt_since_entry %in% 0:2] == 1)) %>%
+  ungroup() %>%
+  pull(hhidpn) -> eligible_ids
+df_combined <- rand_hrs %>%
+  
+  filter(hhidpn %in% eligible_ids)
+
+df_combined <- rand_hrs %>% filter(hhidpn %in% eligible_ids)
+```
+
+# Email Use
+
+## Filtering and variable selection
+
+```{r}
+# Filter by age if needed
+rand_hrs_age <- df_combined
+#%>% 
+ # filter(r6agey_e >= 65)
+
+#rm(df_combined)
+
+
+#rm(rand_hrs)
+
+# rand_hrs_email <- rand_hrs_age %>% 
+#   filter(!is.na(r6email))
+
+#rm(rand_hrs_age)
+
+
+
+
+```
+
+```{r}
+# rand_hrs_email <- rand_hrs_email %>% 
+#   mutate(r6conde = as.numeric(r6hibp + r6diab + r6cancr + r6lung + r6heart + r6strok + r6arthr)) %>%
+#   mutate(r7conde = as.numeric(r7hibp + r7diab + r7cancr + r7lung + r7heart + r7strok + r7arthr)) %>%
+#   mutate(r8conde = as.numeric(r8hibp + r8diab + r8cancr + r8lung + r8heart + r8strok + r8arthr)) %>%
+#   mutate(r9conde = as.numeric(r9hibp + r9diab + r9cancr + r9lung + r9heart + r9strok + r9arthr)) %>% 
+#   mutate(r10conde = as.numeric(r10hibp + r10diab + r10cancr + r10lung + r10heart + r10strok + r10arthr)) %>% 
+#   mutate(r11conde = as.numeric(r11hibp + r11diab + r11cancr + r11lung + r11heart + r11strok + r11arthr)) %>% 
+#   mutate(r12conde = as.numeric(r12hibp + r12diab + r12cancr + r12lung + r12heart + r12strok + r12arthr)) %>% 
+#   mutate(r13conde = as.numeric(r13hibp + r13diab + r13cancr + r13lung + r13heart + r13strok + r13arthr)) %>%
+#   mutate(r14conde = as.numeric(r14hibp + r14diab + r14cancr + r14lung + r14heart + r14strok + r14arthr)) %>% 
+#   mutate(r15conde = as.numeric(r15hibp + r15diab + r15cancr + r15lung + r15heart + r15strok + r15arthr))
+# 
+# rand_hrs_data <- rand_hrs_email
+
+#rand_trial <- rand_hrs_email %>% 
+#  filter(!is.na(r6conde)) 
+
+#mean(rand_trial$r6conde)
+#sd(rand_trial$r6conde)
 ```
 
 ```{r}
 # Create TICS variables
-rand_hrs_email <- rand_hrs_email %>% 
-  mutate(r6tics = r6imrc + r6dlrc + r6ser7 + r6bwc20) %>% 
-  mutate(r7tics = r7imrc + r7dlrc + r7ser7 + r7bwc20) %>% 
-  mutate(r8tics = r8imrc + r8dlrc + r8ser7 + r8bwc20) %>% 
-  mutate(r9tics = r9imrc + r9dlrc + r9ser7 + r9bwc20) %>% 
-  mutate(r10tics = r10imrc + r10dlrc + r10ser7 + r10bwc20) %>% 
-  mutate(r11tics = r11imrc + r11dlrc + r11ser7 + r11bwc20) %>% 
-  mutate(r12tics = r12imrc + r12dlrc + r12ser7 + r12bwc20) %>% 
-  mutate(r13tics = r13imrc + r13dlrc + r13ser7 + r13bwc20) %>%
-  mutate(r14tics = r14imrc + r14dlrc + r14ser7 + r14bwc20) %>%
-  mutate(r15tics = r15imrc + r15dlrc + r15ser7 + r15bwc20) 
+# rand_hrs_email <- rand_hrs_email %>% 
+#   filter(!is.na(r6email))
+# 
+# 
+# 
+# 
+# # Account for reverse causality by removing those with MCI up to wave 9
+# rand_hrs_email <- rand_hrs_email %>% 
+#   filter(!r6tics == 1) %>%  
+#   filter(!r7tics == 1) %>%  
+#   filter(!r8tics == 1) %>%  
+#   filter(!r9tics == 1)
 
+# rand_hrs_email2 <- rand_hrs_jags_impute %>% 
+#   filter(!r6tics == 1) %>%  
+#   filter(!r7tics == 1) %>%  
+#   filter(!r8tics == 1) %>%  
+#   filter(!r9tics == 1)
+# 
+# rand_hrs_email2 <- rand_hrs_email2 %>% 
+#   filter(!is.na(r6email))
 
-# Account for reverse causality by removing those with MCI up to wave 9
-rand_hrs_email2 <- rand_hrs_email %>% 
-  filter(!r6tics < 12) %>% 
-  filter(!r7tics < 12) %>% 
-  filter(!r8tics < 12) %>% 
-  filter(!r9tics < 12)
 ```
-
 
 ```{r}
 # na_sum <- colSums(is.na(rand_hrs_email))
 # print(na_sum)
-# 
+# # 
 # rand_hrs_email <- rand_hrs_email %>% 
-#   filter(!is.na(raeducl)) %>% 
-#   filter(!is.na(raracem))
-```
+#    filter(!is.na(raeducl)) %>% 
+#    filter(!is.na(raracem))
 
+rand_hrs_jags_impute <- rand_hrs_age
+```
 
 ## Create a proxy for chronic disease burden
 
-```{r}
-rand_hrs_email <- rand_hrs_email %>% 
-  mutate(r6chron_disease = as.numeric(r6hibp + r6diab + r6cancr + r6lung + r6heart + r6strok + r6arthr)) %>%
-  mutate(r7chron_disease = as.numeric(r7hibp + r7diab + r7cancr + r7lung + r7heart + r7strok + r7arthr)) %>%
-  mutate(r8chron_disease = as.numeric(r8hibp + r8diab + r8cancr + r8lung + r8heart + r8strok + r8arthr)) %>%
-  mutate(r9chron_disease = as.numeric(r9hibp + r9diab + r9cancr + r9lung + r9heart + r9strok + r9arthr)) %>% 
-  mutate(r10chron_disease = as.numeric(r10hibp + r10diab + r10cancr + r10lung + r10heart + r10strok + r10arthr)) %>% 
-  mutate(r11chron_disease = as.numeric(r11hibp + r11diab + r11cancr + r11lung + r11heart + r11strok + r11arthr)) %>% 
-  mutate(r12chron_disease = as.numeric(r12hibp + r12diab + r12cancr + r12lung + r12heart + r12strok + r12arthr)) %>% 
-  mutate(r13chron_disease = as.numeric(r13hibp + r13diab + r13cancr + r13lung + r13heart + r13strok + r13arthr)) %>%
-  mutate(r14chron_disease = as.numeric(r14hibp + r14diab + r14cancr + r14lung + r14heart + r14strok + r14arthr)) %>% 
-  mutate(r15chron_disease = as.numeric(r15hibp + r15diab + r15cancr + r15lung + r15heart + r15strok + r15arthr))
-
-rand_hrs_data <- rand_hrs_email
-
-rand_trial <- rand_hrs_email %>% 
-  filter(!is.na(r6chron_disease)) 
-
-mean(rand_trial$r6chron_disease)
-sd(rand_trial$r6chron_disease)
-```
-
-
-
 ## Scale variables to have mean 0 and sd 1
+
 ```{r}
-rand_hrs_data$r6agey_e <- as.numeric(scale(rand_hrs_data$r6agey_e, center = TRUE, scale = TRUE))
-rand_hrs_data$r7agey_e <- as.numeric(scale(rand_hrs_data$r7agey_e, center = TRUE, scale = TRUE))
-rand_hrs_data$r8agey_e <- as.numeric(scale(rand_hrs_data$r8agey_e, center = TRUE, scale = TRUE))
-rand_hrs_data$r9agey_e <- as.numeric(scale(rand_hrs_data$r9agey_e, center = TRUE, scale = TRUE))
-rand_hrs_data$r10agey_e <- as.numeric(scale(rand_hrs_data$r10agey_e, center = TRUE, scale = TRUE))
-rand_hrs_data$r11agey_e <- as.numeric(scale(rand_hrs_data$r11agey_e, center = TRUE, scale = TRUE))
-rand_hrs_data$r12agey_e <- as.numeric(scale(rand_hrs_data$r12agey_e, center = TRUE, scale = TRUE))
-rand_hrs_data$r13agey_e <- as.numeric(scale(rand_hrs_data$r13agey_e, center = TRUE, scale = TRUE))
-rand_hrs_data$r14agey_e <- as.numeric(scale(rand_hrs_data$r14agey_e, center = TRUE, scale = TRUE))
-rand_hrs_data$r15agey_e <- as.numeric(scale(rand_hrs_data$r15agey_e, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r6agey_e <- as.numeric(scale(rand_hrs_jags_impute$r6agey_e, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r7agey_e <- as.numeric(scale(rand_hrs_jags_impute$r7agey_e, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r8agey_e <- as.numeric(scale(rand_hrs_jags_impute$r8agey_e, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r9agey_e <- as.numeric(scale(rand_hrs_jags_impute$r9agey_e, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r10agey_e <- as.numeric(scale(rand_hrs_jags_impute$r10agey_e, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r11agey_e <- as.numeric(scale(rand_hrs_jags_impute$r11agey_e, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r12agey_e <- as.numeric(scale(rand_hrs_jags_impute$r12agey_e, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r13agey_e <- as.numeric(scale(rand_hrs_jags_impute$r13agey_e, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r14agey_e <- as.numeric(scale(rand_hrs_jags_impute$r14agey_e, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r15agey_e <- as.numeric(scale(rand_hrs_jags_impute$r15agey_e, center = TRUE, scale = TRUE))
 
 
-rand_hrs_data$r6cesd <- as.numeric(scale(rand_hrs_data$r6cesd, center = TRUE, scale = TRUE))
-rand_hrs_data$r7cesd <- as.numeric(scale(rand_hrs_data$r7cesd, center = TRUE, scale = TRUE))
-rand_hrs_data$r8cesd <- as.numeric(scale(rand_hrs_data$r8cesd, center = TRUE, scale = TRUE))
-rand_hrs_data$r9cesd <- as.numeric(scale(rand_hrs_data$r9cesd, center = TRUE, scale = TRUE))
-rand_hrs_data$r10cesd <- as.numeric(scale(rand_hrs_data$r10cesd, center = TRUE, scale = TRUE))
-rand_hrs_data$r11cesd <- as.numeric(scale(rand_hrs_data$r11cesd, center = TRUE, scale = TRUE))
-rand_hrs_data$r12cesd <- as.numeric(scale(rand_hrs_data$r12cesd, center = TRUE, scale = TRUE))
-rand_hrs_data$r13cesd <- as.numeric(scale(rand_hrs_data$r13cesd, center = TRUE, scale = TRUE))
-rand_hrs_data$r14cesd <- as.numeric(scale(rand_hrs_data$r14cesd, center = TRUE, scale = TRUE))
-rand_hrs_data$r15cesd <- as.numeric(scale(rand_hrs_data$r15cesd, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r6cesd <- as.numeric(scale(rand_hrs_jags_impute$r6cesd, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r7cesd <- as.numeric(scale(rand_hrs_jags_impute$r7cesd, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r8cesd <- as.numeric(scale(rand_hrs_jags_impute$r8cesd, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r9cesd <- as.numeric(scale(rand_hrs_jags_impute$r9cesd, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r10cesd <- as.numeric(scale(rand_hrs_jags_impute$r10cesd, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r11cesd <- as.numeric(scale(rand_hrs_jags_impute$r11cesd, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r12cesd <- as.numeric(scale(rand_hrs_jags_impute$r12cesd, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r13cesd <- as.numeric(scale(rand_hrs_jags_impute$r13cesd, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r14cesd <- as.numeric(scale(rand_hrs_jags_impute$r14cesd, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r15cesd <- as.numeric(scale(rand_hrs_jags_impute$r15cesd, center = TRUE, scale = TRUE))
 
-#rand_hrs_data$raeducl <- scale(rand_hrs_data$raeducl, center = TRUE, scale = TRUE)
+#rand_hrs_jags_impute$raeducl <- scale(rand_hrs_jags_impute$raeducl, center = TRUE, scale = TRUE)
 
-#rand_hrs_data$ragender <- scale(rand_hrs_data$ragender, center = TRUE, scale = TRUE)
-#rand_hrs_data$raracem<- scale(rand_hrs_data$raracem, center = TRUE, scale = TRUE)
+#rand_hrs_jags_impute$ragender <- scale(rand_hrs_jags_impute$ragender, center = TRUE, scale = TRUE)
+#rand_hrs_jags_impute$raracem<- scale(rand_hrs_jags_impute$raracem, center = TRUE, scale = TRUE)
 
-rand_hrs_data$raracem <- as.factor(rand_hrs_data$raracem)
-rand_hrs_data$raeducl <- as.factor(rand_hrs_data$raeducl)
+rand_hrs_jags_impute$raracem <- as.factor(rand_hrs_jags_impute$raracem)
+rand_hrs_jags_impute$raeducl <- as.factor(rand_hrs_jags_impute$raeducl)
 
-raeducl_levels <- model.matrix(~ raeducl - 1, 
-                               data = rand_hrs_data)
+library(fastDummies)
 
-rand_hrs_data <- cbind(rand_hrs_data, raeducl_levels)
+df_dummies <- fastDummies::dummy_cols(
+  rand_hrs_jags_impute,
+  select_columns = c("raeducl", "raracem"),
+  remove_first_dummy = FALSE,
+  ignore_na = TRUE  # so we don't get a separate "raeducl_NA" column
+)
 
+# Identify which rows had NA in the original column
+na_rows <- is.na(rand_hrs_jags_impute$raeducl)
 
-raracem_levels <- model.matrix(~ raracem - 1, 
-                               data = rand_hrs_data
-                               )
+# Get the names of the dummy columns created
+dummy_cols <- grep("^raeducl_", names(df_dummies), value = TRUE)
 
-rand_hrs_data <- cbind(rand_hrs_data, raracem_levels)
-rand_hrs_data$h9rural <- as.numeric(scale(rand_hrs_data$h9rural, center = TRUE, scale = TRUE))
-rand_hrs_data$h10rural <- as.numeric(scale(rand_hrs_data$h10rural, center = TRUE, scale = TRUE))
-rand_hrs_data$h11rural <- as.numeric(scale(rand_hrs_data$h11rural, center = TRUE, scale = TRUE))
-rand_hrs_data$h12rural <- as.numeric(scale(rand_hrs_data$h12rural, center = TRUE, scale = TRUE))
-rand_hrs_data$h13rural <- as.numeric(scale(rand_hrs_data$h13rural, center = TRUE, scale = TRUE))
+# Set those dummy columns to NA where the original was NA
+df_dummies[na_rows, dummy_cols] <- NA
 
+# Identify which rows had NA in the original column
+na_rows2 <- is.na(rand_hrs_jags_impute$raeducl)
 
-rand_hrs_data$r6chron_disease <- as.numeric(scale(rand_hrs_data$r6chron_disease, center = TRUE, scale = TRUE))
-rand_hrs_data$r7chron_disease <- as.numeric(scale(rand_hrs_data$r7chron_disease, center = TRUE, scale = TRUE))
-rand_hrs_data$r8chron_disease <- as.numeric(scale(rand_hrs_data$r8chron_disease, center = TRUE, scale = TRUE))
-rand_hrs_data$r9chron_disease <- as.numeric(scale(rand_hrs_data$r9chron_disease, center = TRUE, scale = TRUE))
-rand_hrs_data$r10chron_disease <- as.numeric(scale(rand_hrs_data$r10chron_disease, center = TRUE, scale = TRUE))
-rand_hrs_data$r11chron_disease <- as.numeric(scale(rand_hrs_data$r11chron_disease, center = TRUE, scale = TRUE))
-rand_hrs_data$r12chron_disease <- as.numeric(scale(rand_hrs_data$r12chron_disease, center = TRUE, scale = TRUE))
-rand_hrs_data$r13chron_disease <- as.numeric(scale(rand_hrs_data$r13chron_disease, center = TRUE, scale = TRUE))
-rand_hrs_data$r14chron_disease <- as.numeric(scale(rand_hrs_data$r14chron_disease, center = TRUE, scale = TRUE))
-rand_hrs_data$r15chron_disease <- as.numeric(scale(rand_hrs_data$r15chron_disease, center = TRUE, scale = TRUE))
+# Get the names of the dummy columns created
+dummy_cols2 <- grep("^raracem_", names(df_dummies), value = TRUE)
 
+# Set those dummy columns to NA where the original was NA
+df_dummies[na_rows2, dummy_cols2] <- NA
 
-rand_hrs_data$r6adltot6 <- as.numeric(scale(rand_hrs_data$r6adltot6, center = TRUE, scale = TRUE))
-rand_hrs_data$r7adltot6 <- as.numeric(scale(rand_hrs_data$r7adltot6, center = TRUE, scale = TRUE))
-rand_hrs_data$r8adltot6 <- as.numeric(scale(rand_hrs_data$r8adltot6, center = TRUE, scale = TRUE))
-rand_hrs_data$r9adltot6 <- as.numeric(scale(rand_hrs_data$r9adltot6, center = TRUE, scale = TRUE))
-rand_hrs_data$r10adltot6 <- as.numeric(scale(rand_hrs_data$r10adltot6, center = TRUE, scale = TRUE))
-rand_hrs_data$r11adltot6 <- as.numeric(scale(rand_hrs_data$r11adltot6, center = TRUE, scale = TRUE))
-rand_hrs_data$r12adltot6 <- as.numeric(scale(rand_hrs_data$r12adltot6, center = TRUE, scale = TRUE))
-rand_hrs_data$r13adltot6 <- as.numeric(scale(rand_hrs_data$r13adltot6, center = TRUE, scale = TRUE))
-rand_hrs_data$r14adltot6 <- as.numeric(scale(rand_hrs_data$r14adltot6, center = TRUE, scale = TRUE))
-rand_hrs_data$r15adltot6 <- as.numeric(scale(rand_hrs_data$r15adltot6, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute <- df_dummies
+
+rand_hrs_jags_impute$h9rural <- as.numeric(scale(rand_hrs_jags_impute$h9rural, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$h10rural <- as.numeric(scale(rand_hrs_jags_impute$h10rural, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$h11rural <- as.numeric(scale(rand_hrs_jags_impute$h11rural, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$h12rural <- as.numeric(scale(rand_hrs_jags_impute$h12rural, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$h13rural <- as.numeric(scale(rand_hrs_jags_impute$h13rural, center = TRUE, scale = TRUE))
 
 
-rand_hrs_data$r6iadltot_h <- as.numeric(scale(rand_hrs_data$r6iadltot_h, center = TRUE, scale = TRUE))
-rand_hrs_data$r7iadltot_h <- as.numeric(scale(rand_hrs_data$r7iadltot_h, center = TRUE, scale = TRUE))
-rand_hrs_data$r8iadltot_h <- as.numeric(scale(rand_hrs_data$r8iadltot_h, center = TRUE, scale = TRUE))
-rand_hrs_data$r9iadltot_h <- as.numeric(scale(rand_hrs_data$r9iadltot_h, center = TRUE, scale = TRUE))
-rand_hrs_data$r10iadltot_h <- as.numeric(scale(rand_hrs_data$r10iadltot_h, center = TRUE, scale = TRUE))
-rand_hrs_data$r11iadltot_h <- as.numeric(scale(rand_hrs_data$r11iadltot_h, center = TRUE, scale = TRUE))
-rand_hrs_data$r12iadltot_h <- as.numeric(scale(rand_hrs_data$r12iadltot_h, center = TRUE, scale = TRUE))
-rand_hrs_data$r13iadltot_h <- as.numeric(scale(rand_hrs_data$r13iadltot_h, center = TRUE, scale = TRUE))
-rand_hrs_data$r14iadltot_h <- as.numeric(scale(rand_hrs_data$r14iadltot_h, center = TRUE, scale = TRUE))
-rand_hrs_data$r15iadltot_h <- as.numeric(scale(rand_hrs_data$r15iadltot_h, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r6conde <- as.numeric(scale(rand_hrs_jags_impute$r6conde, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r7conde <- as.numeric(scale(rand_hrs_jags_impute$r7conde, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r8conde <- as.numeric(scale(rand_hrs_jags_impute$r8conde, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r9conde <- as.numeric(scale(rand_hrs_jags_impute$r9conde, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r10conde <- as.numeric(scale(rand_hrs_jags_impute$r10conde, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r11conde <- as.numeric(scale(rand_hrs_jags_impute$r11conde, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r12conde <- as.numeric(scale(rand_hrs_jags_impute$r12conde, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r13conde <- as.numeric(scale(rand_hrs_jags_impute$r13conde, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r14conde <- as.numeric(scale(rand_hrs_jags_impute$r14conde, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r15conde <- as.numeric(scale(rand_hrs_jags_impute$r15conde, center = TRUE, scale = TRUE))
+
+
+rand_hrs_jags_impute$r6adltot6 <- as.numeric(scale(rand_hrs_jags_impute$r6adltot6, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r7adltot6 <- as.numeric(scale(rand_hrs_jags_impute$r7adltot6, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r8adltot6 <- as.numeric(scale(rand_hrs_jags_impute$r8adltot6, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r9adltot6 <- as.numeric(scale(rand_hrs_jags_impute$r9adltot6, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r10adltot6 <- as.numeric(scale(rand_hrs_jags_impute$r10adltot6, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r11adltot6 <- as.numeric(scale(rand_hrs_jags_impute$r11adltot6, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r12adltot6 <- as.numeric(scale(rand_hrs_jags_impute$r12adltot6, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r13adltot6 <- as.numeric(scale(rand_hrs_jags_impute$r13adltot6, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r14adltot6 <- as.numeric(scale(rand_hrs_jags_impute$r14adltot6, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r15adltot6 <- as.numeric(scale(rand_hrs_jags_impute$r15adltot6, center = TRUE, scale = TRUE))
+
+
+rand_hrs_jags_impute$r6iadltot_h <- as.numeric(scale(rand_hrs_jags_impute$r6iadltot_h, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r7iadltot_h <- as.numeric(scale(rand_hrs_jags_impute$r7iadltot_h, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r8iadltot_h <- as.numeric(scale(rand_hrs_jags_impute$r8iadltot_h, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r9iadltot_h <- as.numeric(scale(rand_hrs_jags_impute$r9iadltot_h, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r10iadltot_h <- as.numeric(scale(rand_hrs_jags_impute$r10iadltot_h, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r11iadltot_h <- as.numeric(scale(rand_hrs_jags_impute$r11iadltot_h, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r12iadltot_h <- as.numeric(scale(rand_hrs_jags_impute$r12iadltot_h, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r13iadltot_h <- as.numeric(scale(rand_hrs_jags_impute$r13iadltot_h, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r14iadltot_h <- as.numeric(scale(rand_hrs_jags_impute$r14iadltot_h, center = TRUE, scale = TRUE))
+rand_hrs_jags_impute$r15iadltot_h <- as.numeric(scale(rand_hrs_jags_impute$r15iadltot_h, center = TRUE, scale = TRUE))
 
 
 ```
@@ -378,16 +753,16 @@ selected_columns <- c("ragender",
                                       "r14cesd",
                                       "r15cesd",
 
-                                      "r6chron_disease",
-                                      "r7chron_disease",
-                                      "r8chron_disease",
-                                      "r9chron_disease",
-                                      "r10chron_disease",
-                                      "r11chron_disease",
-                                      "r12chron_disease",
-                                      "r13chron_disease",
-                                      "r14chron_disease",
-                                      "r15chron_disease",
+                                      "r6conde",
+                                      "r7conde",
+                                      "r8conde",
+                                      "r9conde",
+                                      "r10conde",
+                                      "r11conde",
+                                      "r12conde",
+                                      "r13conde",
+                                      "r14conde",
+                                      "r15conde",
 
                                       "r6iadltot_h",
                                       "r7iadltot_h",
@@ -483,56 +858,55 @@ selected_columns <- c("ragender",
 
 ```{r}
 # Calculate percentage of NA values for each column
-na_percentage <- rand_hrs_data %>%
-  summarise(across(all_of(selected_columns), 
-                   ~ sum(is.na(.)) / n() * 100, 
-                   .names = "{col}"))
-na_percentage <- (round(na_percentage, 2))
-
-
-
-ft <- na_percentage %>%   
-  t() %>%
-  as.data.frame() %>% 
-  rownames_to_column() %>%
-  setNames(c("Variable", "Proportion of Missing Data")) %>%
-  as.data.frame() %>% 
-  flextable() %>%
-  set_caption("Table 1: Proportion of Missing Data per Variable") %>% 
-  theme_vanilla() %>% 
-  autofit() %>%
-  add_header_lines("Note: Each value represents the proportion of missing data within each variable. Figures have already been converted to percentages.")
-
-# Save as an HTML file
-save_as_html(ft, path = "na_percentage.html")
+# na_percentage <- rand_hrs_jags_impute %>%
+#   summarise(across(all_of(selected_columns), 
+#                    ~ sum(is.na(.)) / n() * 100, 
+#                    .names = "{col}"))
+# na_percentage <- (round(na_percentage, 2))
+# 
+# 
+# 
+# ft <- na_percentage %>%   
+#   t() %>%
+#   as.data.frame() %>% 
+#   rownames_to_column() %>%
+#   setNames(c("Variable", "Proportion of Missing Data")) %>%
+#   as.data.frame() %>% 
+#   flextable() %>%
+#   set_caption("Table 1: Proportion of Missing Data per Variable") %>% 
+#   theme_vanilla() %>% 
+#   autofit() %>%
+#   add_header_lines("Note: Each value represents the proportion of missing data within each variable. Figures have already been converted to percentages.")
+# 
+# # Save as an HTML file
+# save_as_html(ft, path = "na_percentage.html")
 
 
 
 ```
 
-
 ```{r}
 #some additional data cleaning and imputing NA values with median 
 
-rand_hrs_data$ragender <- 2 - rand_hrs_data$ragender   #re-code as 0 and 1 (0 indicates female; 1 indicates male)
-rand_hrs_data$raracem1_r <- 1 - rand_hrs_data$raracem1  #re-code as 0 and 1 (0 means whites or nh-whites? 1 means other)
-rand_hrs_data$r6chron_disease[is.na(rand_hrs_data$r6chron_disease)] <- median(rand_hrs_data$r6chron_disease, na.rm = T)
-rand_hrs_data$r7chron_disease[is.na(rand_hrs_data$r7chron_disease)] <- median(rand_hrs_data$r7chron_disease, na.rm = T)
-rand_hrs_data$r8chron_disease[is.na(rand_hrs_data$r8chron_disease)] <- median(rand_hrs_data$r8chron_disease, na.rm = T)
-rand_hrs_data$r9chron_disease[is.na(rand_hrs_data$r9chron_disease)] <- median(rand_hrs_data$r9chron_disease, na.rm = T)
-rand_hrs_data$r10chron_disease[is.na(rand_hrs_data$r10chron_disease)] <- median(rand_hrs_data$r10chron_disease, na.rm = T)
-rand_hrs_data$r11chron_disease[is.na(rand_hrs_data$r11chron_disease)] <- median(rand_hrs_data$r11chron_disease, na.rm = T)
-rand_hrs_data$r12chron_disease[is.na(rand_hrs_data$r12chron_disease)] <- median(rand_hrs_data$r12chron_disease, na.rm = T)
-rand_hrs_data$r13chron_disease[is.na(rand_hrs_data$r13chron_disease)] <- median(rand_hrs_data$r13chron_disease, na.rm = T)
-rand_hrs_data$r14chron_disease[is.na(rand_hrs_data$r14chron_disease)] <- median(rand_hrs_data$r14chron_disease, na.rm = T)
-rand_hrs_data$r15chron_disease[is.na(rand_hrs_data$r15chron_disease)] <- median(rand_hrs_data$r15chron_disease, na.rm = T)
+rand_hrs_jags_impute$ragender <- 2 - rand_hrs_jags_impute$ragender   #re-code as 0 and 1 (0 indicates female; 1 indicates male)
+#rand_hrs_jags_impute$raracem1_r <- 1 - rand_hrs_jags_impute$raracem1  #re-code as 0 and 1 (0 means whites or nh-whites? 1 means other)
+# rand_hrs_jags_impute$r6conde[is.na(rand_hrs_jags_impute$r6conde)] <- median(rand_hrs_jags_impute$r6conde, na.rm = T)
+# rand_hrs_jags_impute$r7conde[is.na(rand_hrs_jags_impute$r7conde)] <- median(rand_hrs_jags_impute$r7conde, na.rm = T)
+# rand_hrs_jags_impute$r8conde[is.na(rand_hrs_jags_impute$r8conde)] <- median(rand_hrs_jags_impute$r8conde, na.rm = T)
+# rand_hrs_jags_impute$r9conde[is.na(rand_hrs_jags_impute$r9conde)] <- median(rand_hrs_jags_impute$r9conde, na.rm = T)
+# rand_hrs_jags_impute$r10conde[is.na(rand_hrs_jags_impute$r10conde)] <- median(rand_hrs_jags_impute$r10conde, na.rm = T)
+# rand_hrs_jags_impute$r11conde[is.na(rand_hrs_jags_impute$r11conde)] <- median(rand_hrs_jags_impute$r11conde, na.rm = T)
+# rand_hrs_jags_impute$r12conde[is.na(rand_hrs_jags_impute$r12conde)] <- median(rand_hrs_jags_impute$r12conde, na.rm = T)
+# rand_hrs_jags_impute$r13conde[is.na(rand_hrs_jags_impute$r13conde)] <- median(rand_hrs_jags_impute$r13conde, na.rm = T)
+# rand_hrs_jags_impute$r14conde[is.na(rand_hrs_jags_impute$r14conde)] <- median(rand_hrs_jags_impute$r14conde, na.rm = T)
+#rand_hrs_jags_impute$r15conde[is.na(rand_hrs_jags_impute$r15conde)] <- median(rand_hrs_jags_impute$r15conde, na.rm = T)
 
-table(rand_hrs_data$ragender)
-table(rand_hrs_data$raracem1_r)
-summary(rand_hrs_data$r9chron_disease)
+table(rand_hrs_jags_impute$ragender)
+table(rand_hrs_jags_impute$raracem1_r)
+summary(rand_hrs_jags_impute$r9conde)
 
 ordered_vars <- c("r6email", "r7email", "r8email", "r9email", "r10email", "r11email", "r12email", "r13email", "r14email", "r15email")
-# parallel_fit_email <- sem(parallel_model_email, data = rand_hrs_data, ordered = ordered_vars)
+# parallel_fit_email <- sem(parallel_model_email, data = rand_hrs_jags_impute, ordered = ordered_vars)
 # 
 # summary(parallel_fit_email)
 # 
@@ -546,58 +920,120 @@ ordered_vars <- c("r6email", "r7email", "r8email", "r9email", "r10email", "r11em
 #----------------------------
 #Joint latent growth-survival model
 
-rand_hrs_jags <- rand_hrs_data
+rand_hrs_jags <- rand_hrs_jags_impute
+
+
+# rand_hrs_jags <- rand_hrs_jags %>%
+#   rowwise() %>%
+#   mutate(
+#     # First wave participant was observed (join time)
+#     first_wave = {
+#       waves <- c(r7tics, r8tics, r9tics, r10tics, r11tics, r12tics, r13tics, r14tics, r15tics)
+#       observed <- which(!is.na(waves))
+#       if(length(observed) == 0) NA_integer_ else observed[1]
+#     },
+#     
+#     # Wave where event occurred (first time tics == 1)
+#     event_wave = {
+#       waves <- c(r7tics, r8tics, r9tics, r10tics, r11tics, r12tics, r13tics, r14tics, r15tics)
+#       event_idx <- which(waves == 1)
+#       if(length(event_idx) == 0) NA_integer_ else event_idx[1]
+#     },
+#     
+#     # Event indicator: 1 if event occurred, 0 if censored
+#     event = ifelse(!is.na(event_wave), 1, 0),
+#     
+#     # Event time: number of waves since first_wave, or max if censored
+#     event_time = case_when(
+#       !is.na(event_wave) ~ event_wave,               # event occurred
+#       is.na(event_wave) & !is.na(first_wave) ~ 9,   # censored at last wave
+#       TRUE ~ NA_integer_                             # never observed
+#     )
+#   ) %>%
+#   ungroup()
 
 #rand_hrs_jags <- rand_hrs_jags.copy
 
 # data preparation creating event time and event status
+# rand_hrs_jags <- rand_hrs_jags %>%
+#   mutate(
+#     event_time = case_when(
+#       is.na(r7tics) ~ 1,
+#       r7tics == 1 ~ 1,
+#       is.na(r8tics) ~ 2,
+#       r8tics == 1 ~ 2,
+#       is.na(r9tics) ~ 3,
+#       r9tics == 1 ~ 3,
+#       is.na(r10tics) ~ 4,
+#       r10tics == 1 ~ 4,
+#       is.na(r11tics) ~ 5,
+#       r11tics == 1 ~ 5,
+#       is.na(r12tics) ~ 6,
+#       r12tics == 1 ~ 6,
+#       is.na(r13tics) ~ 7,
+#       r13tics == 1 ~ 7,
+#       is.na(r14tics) ~ 8,
+#       r14tics == 1 ~ 8,
+#       is.na(r15tics) ~ 9,
+#       r15tics == 1 ~ 9,
+#       TRUE ~ 9  # Censored at the last time point if no event occurred
+# ),
+#     event = case_when(
+#       is.na(r7tics) ~ 0,
+#       r7tics == 1 ~ 1,
+#       is.na(r8tics) ~ 0,
+#       r8tics == 1 ~ 1,
+#       is.na(r9tics) ~ 0,
+#       r9tics == 1 ~ 1,
+#       is.na(r10tics) ~ 0,
+#       r10tics == 1 ~ 1,
+#       is.na(r11tics) ~ 0,
+#       r11tics == 1 ~ 1,
+#       is.na(r12tics) ~ 0,
+#       r12tics == 1 ~ 1,
+#       is.na(r13tics) ~ 0,
+#       r13tics == 1 ~ 1,
+#       is.na(r14tics) ~ 0,
+#       r14tics == 1 ~ 1,
+#       is.na(r15tics) ~ 0,
+#       r15tics == 1 ~ 1,
+#       TRUE ~ 0  # Censored at the last time point if no event occurred
+#     )
+#   )
+rand_hrs_jags <- rand_hrs_jags %>%
+  filter(hhidpn %in% eligible_ids) %>%
+  rowwise() %>%
+  mutate(
+    first_wave = {
+      waves <- c(r6tics, r7tics, r8tics, r9tics, r10tics, r11tics, r12tics, r13tics, r14tics, r15tics)
+      obs <- which(!is.na(waves))
+      if(length(obs)) obs[1] + 5L else NA_integer_
+    },
+    event_wave = {
+      waves_event <- c(r6tics, r7tics, r8tics, r9tics, r10tics, r11tics, r12tics, r13tics, r14tics, r15tics)
+      idx <- which(waves_event == 1)
+      if(length(idx)) idx[1] + 5L else NA_integer_
+    },
+    last_obs_wave = {
+      waves_any <- c(r6tics, r7tics, r8tics, r9tics, r10tics, r11tics, r12tics, r13tics, r14tics, r15tics)
+      idx <- which(!is.na(waves_any))
+      if(length(idx)) max(idx) + 5L else NA_integer_
+    }
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(first_wave))
+
 rand_hrs_jags <- rand_hrs_jags %>%
   mutate(
-    event_time = case_when(
-      is.na(r7tics) ~ 1,
-      r7tics < 12 ~ 1,
-      is.na(r8tics) ~ 2,
-      r8tics < 12 ~ 2,
-      is.na(r9tics) ~ 3,
-      r9tics < 12 ~ 3,
-      is.na(r10tics) ~ 4,
-      r10tics < 12 ~ 4,
-      is.na(r11tics) ~ 5,
-      r11tics < 12 ~ 5,
-      is.na(r12tics) ~ 6,
-      r12tics < 12 ~ 6,
-      is.na(r13tics) ~ 7,
-      r13tics < 12 ~ 7,
-      is.na(r14tics) ~ 8,
-      r14tics < 12 ~ 8,
-      is.na(r15tics) ~ 9,
-      r15tics < 12 ~ 9,
-      TRUE ~ 9  # Censored at the last time point if no event occurred
-),
-    event = case_when(
-      is.na(r7tics) ~ 0,
-      r10tics < 12 ~ 1,
-      is.na(r8tics) ~ 0,
-      r10tics < 12 ~ 1,
-      is.na(r9tics) ~ 0,
-      r10tics < 12 ~ 1,
-      is.na(r10tics) ~ 0,
-      r10tics < 12 ~ 1,
-      is.na(r11tics) ~ 0,
-      r11tics < 12 ~ 1,
-      is.na(r12tics) ~ 0,
-      r12tics < 12 ~ 1,
-      is.na(r13tics) ~ 0,
-      r13tics < 12 ~ 1,
-      is.na(r14tics) ~ 0,
-      r14tics < 12 ~ 1,
-      is.na(r15tics) ~ 0,
-      r15tics < 12 ~ 1,
-      TRUE ~ 0  # Censored at the last time point if no event occurred
-    )
+    # Event time = time from first_wave to event_wave (or last_obs_wave if censored)
+    event_time = ifelse(!is.na(event_wave),
+                        event_wave - first_wave,          # time to event
+                        last_obs_wave - first_wave + 1),  # censored at last observed wave
+    status = ifelse(!is.na(event_wave), 1L, 0L)         # 1 = event occurred, 0 = censored
   )
+
 # Verify the updated cross-table
-table(rand_hrs_jags$event_time, rand_hrs_jags$event, useNA = "always")
+table(rand_hrs_jags$event_time, rand_hrs_jags$status, useNA = "always")
 
 #survival and censoring times (all censored are right-censored)
 #cens <- rand_hrs_jags$event_time
@@ -606,32 +1042,31 @@ table(rand_hrs_jags$event_time, rand_hrs_jags$event, useNA = "always")
 
 ```
 
-
 ```{r}
-# Define demographic columns of interest to provide summary statistics
-demo_columns <- c("r6cesd", 
-                  "r6chron_disease", 
-                  "r6iadltot_h", 
-                  "r6adltot6",
-                  "r6agey_e")
-demo_cat_columns <- c("raeducl", 
-                      "raracem", 
-                      "ragender",
-                      "h6rural")
-
-
-# Loop through numeric columns
-for (i in demo_columns) {
-  print(i)
-  print(mean(rand_hrs_email[[i]], na.rm = TRUE))
-  print(sd(rand_hrs_email[[i]], na.rm = TRUE))
-}
-
-# Loop through categorical columns
-for (i in demo_cat_columns) {
-  print(i)
-  print(table(rand_hrs_email[[i]], useNA = "always"))
-}
+# # Define demographic columns of interest to provide summary statistics
+# demo_columns <- c("r6cesd", 
+#                   "r6conde", 
+#                   "r6iadltot_h", 
+#                   "r6adltot6",
+#                   "r6agey_e")
+# demo_cat_columns <- c("raeducl", 
+#                       "raracem", 
+#                       "ragender",
+#                       "h6rural")
+# 
+# 
+# # Loop through numeric columns
+# for (i in demo_columns) {
+#   print(i)
+#   print(mean(rand_hrs_email[[i]], na.rm = TRUE))
+#   print(sd(rand_hrs_email[[i]], na.rm = TRUE))
+# }
+# 
+# # Loop through categorical columns
+# for (i in demo_cat_columns) {
+#   print(i)
+#   print(table(rand_hrs_email[[i]], useNA = "always"))
+# }
 
 ```
 
@@ -688,105 +1123,34 @@ for (i in demo_cat_columns) {
 
 ```
 
-
-
-~~
-
-```{r}
-#impute NA values with the median
-
-rand_hrs_jags$r7email[is.na(rand_hrs_jags$r7email)] <- median(rand_hrs_jags$r7email)
-rand_hrs_jags$r8email[is.na(rand_hrs_jags$r8email)] <- median(rand_hrs_jags$r8email)
-rand_hrs_jags$r9email[is.na(rand_hrs_jags$r9email)] <- median(rand_hrs_jags$r9email)
-rand_hrs_jags$r10email[is.na(rand_hrs_jags$r10email)] <- median(rand_hrs_jags$r10email)
-rand_hrs_jags$r11email[is.na(rand_hrs_jags$r11email)] <- median(rand_hrs_jags$r11email)
-rand_hrs_jags$r12email[is.na(rand_hrs_jags$r12email)] <- median(rand_hrs_jags$r12email)
-rand_hrs_jags$r13email[is.na(rand_hrs_jags$r13email)] <- median(rand_hrs_jags$r13email)
-rand_hrs_jags$r14email[is.na(rand_hrs_jags$r14email)] <- median(rand_hrs_jags$r14email)
-rand_hrs_jags$r15email[is.na(rand_hrs_jags$r15email)] <- median(rand_hrs_jags$r15email)
-
-rand_hrs_jags$r6agey_e[is.na(rand_hrs_jags$r6agey_e)] <- median(rand_hrs_jags$r6agey_e, na.rm = T)
-rand_hrs_jags$r7agey_e[is.na(rand_hrs_jags$r7agey_e)] <- median(rand_hrs_jags$r7agey_e, na.rm = T)
-rand_hrs_jags$r8agey_e[is.na(rand_hrs_jags$r8agey_e)] <- median(rand_hrs_jags$r8agey_e, na.rm = T)
-
-rand_hrs_jags$r9agey_e[is.na(rand_hrs_jags$r9agey_e)] <- median(rand_hrs_jags$r9agey_e, na.rm = T)
-rand_hrs_jags$r10agey_e[is.na(rand_hrs_jags$r10agey_e)] <- median(rand_hrs_jags$r10agey_e, na.rm = T)
-rand_hrs_jags$r11agey_e[is.na(rand_hrs_jags$r11agey_e)] <- median(rand_hrs_jags$r11agey_e, na.rm = T)
-rand_hrs_jags$r12agey_e[is.na(rand_hrs_jags$r12agey_e)] <- median(rand_hrs_jags$r12agey_e, na.rm = T)
-rand_hrs_jags$r13agey_e[is.na(rand_hrs_jags$r13agey_e)] <- median(rand_hrs_jags$r13agey_e, na.rm = T)
-rand_hrs_jags$r14agey_e[is.na(rand_hrs_jags$r14agey_e)] <- median(rand_hrs_jags$r14agey_e, na.rm = T)
-rand_hrs_jags$r15agey_e[is.na(rand_hrs_jags$r15agey_e)] <- median(rand_hrs_jags$r15agey_e, na.rm = T)
-
-
-rand_hrs_jags$r6cesd[is.na(rand_hrs_jags$r6cesd)] <- median(rand_hrs_jags$r6cesd, na.rm = T)
-rand_hrs_jags$r7cesd[is.na(rand_hrs_jags$r7cesd)] <- median(rand_hrs_jags$r7cesd, na.rm = T)
-rand_hrs_jags$r8cesd[is.na(rand_hrs_jags$r8cesd)] <- median(rand_hrs_jags$r8cesd, na.rm = T)
-
-rand_hrs_jags$r9cesd[is.na(rand_hrs_jags$r9cesd)] <- median(rand_hrs_jags$r9cesd, na.rm = T)
-rand_hrs_jags$r10cesd[is.na(rand_hrs_jags$r10cesd)] <- median(rand_hrs_jags$r10cesd, na.rm = T)
-rand_hrs_jags$r11cesd[is.na(rand_hrs_jags$r11cesd)] <- median(rand_hrs_jags$r11cesd, na.rm = T)
-rand_hrs_jags$r12cesd[is.na(rand_hrs_jags$r12cesd)] <- median(rand_hrs_jags$r12cesd, na.rm = T)
-rand_hrs_jags$r13cesd[is.na(rand_hrs_jags$r13cesd)] <- median(rand_hrs_jags$r13cesd, na.rm = T)
-rand_hrs_jags$r14cesd[is.na(rand_hrs_jags$r14cesd)] <- median(rand_hrs_jags$r14cesd, na.rm = T)
-rand_hrs_jags$r15cesd[is.na(rand_hrs_jags$r15cesd)] <- median(rand_hrs_jags$r15cesd, na.rm = T)
-
-rand_hrs_jags$r6chron_disease[is.na(rand_hrs_jags$r6chron_disease)] <- median(rand_hrs_jags$r6chron_disease, na.rm = T)
-rand_hrs_jags$r7chron_disease[is.na(rand_hrs_jags$r7chron_disease)] <- median(rand_hrs_jags$r7chron_disease, na.rm = T)
-rand_hrs_jags$r8chron_disease[is.na(rand_hrs_jags$r8chron_disease)] <- median(rand_hrs_jags$r8chron_disease, na.rm = T)
-rand_hrs_jags$r9chron_disease[is.na(rand_hrs_jags$r9chron_disease)] <- median(rand_hrs_jags$r9chron_disease, na.rm = T)
-
-rand_hrs_jags$r10chron_disease[is.na(rand_hrs_jags$r10chron_disease)] <- median(rand_hrs_jags$r10chron_disease, na.rm = T)
-rand_hrs_jags$r11chron_disease[is.na(rand_hrs_jags$r11chron_disease)] <- median(rand_hrs_jags$r11chron_disease, na.rm = T)
-rand_hrs_jags$r12chron_disease[is.na(rand_hrs_jags$r12chron_disease)] <- median(rand_hrs_jags$r12chron_disease, na.rm = T)
-rand_hrs_jags$r13chron_disease[is.na(rand_hrs_jags$r13chron_disease)] <- median(rand_hrs_jags$r13chron_disease, na.rm = T)
-rand_hrs_jags$r14chron_disease[is.na(rand_hrs_jags$r14chron_disease)] <- median(rand_hrs_jags$r14chron_disease, na.rm = T)
-rand_hrs_jags$r15chron_disease[is.na(rand_hrs_jags$r15chron_disease)] <- median(rand_hrs_jags$r15chron_disease, na.rm = T)
-
-
-rand_hrs_jags$r6iadltot_h[is.na(rand_hrs_jags$r6iadltot_h)] <- median(rand_hrs_jags$r6iadltot_h, na.rm = T)
-rand_hrs_jags$r7iadltot_h[is.na(rand_hrs_jags$r7iadltot_h)] <- median(rand_hrs_jags$r7iadltot_h, na.rm = T)
-rand_hrs_jags$r8iadltot_h[is.na(rand_hrs_jags$r8iadltot_h)] <- median(rand_hrs_jags$r8iadltot_h, na.rm = T)
-rand_hrs_jags$r9iadltot_h[is.na(rand_hrs_jags$r9iadltot_h)] <- median(rand_hrs_jags$r9iadltot_h, na.rm = T)
-
-
-rand_hrs_jags$r10iadltot_h[is.na(rand_hrs_jags$r10iadltot_h)] <- median(rand_hrs_jags$r10iadltot_h, na.rm = T)
-rand_hrs_jags$r11iadltot_h[is.na(rand_hrs_jags$r11iadltot_h)] <- median(rand_hrs_jags$r11iadltot_h, na.rm = T)
-rand_hrs_jags$r12iadltot_h[is.na(rand_hrs_jags$r12iadltot_h)] <- median(rand_hrs_jags$r12iadltot_h, na.rm = T)
-rand_hrs_jags$r13iadltot_h[is.na(rand_hrs_jags$r13iadltot_h)] <- median(rand_hrs_jags$r13iadltot_h, na.rm = T)
-rand_hrs_jags$r14iadltot_h[is.na(rand_hrs_jags$r14iadltot_h)] <- median(rand_hrs_jags$r14iadltot_h, na.rm = T)
-rand_hrs_jags$r15iadltot_h[is.na(rand_hrs_jags$r15iadltot_h)] <- median(rand_hrs_jags$r15iadltot_h, na.rm = T)
-
-
-
-rand_hrs_jags$r6adltot6[is.na(rand_hrs_jags$r6adltot6)] <- median(rand_hrs_jags$r10adltot6, na.rm = T)
-rand_hrs_jags$r7adltot6[is.na(rand_hrs_jags$r7adltot6)] <- median(rand_hrs_jags$r7adltot6, na.rm = T)
-rand_hrs_jags$r8adltot6[is.na(rand_hrs_jags$r8adltot6)] <- median(rand_hrs_jags$r8adltot6, na.rm = T)
-rand_hrs_jags$r9adltot6[is.na(rand_hrs_jags$r9adltot6)] <- median(rand_hrs_jags$r9adltot6, na.rm = T)
-
-rand_hrs_jags$r10adltot6[is.na(rand_hrs_jags$r10adltot6)] <- median(rand_hrs_jags$r10adltot6, na.rm = T)
-rand_hrs_jags$r11adltot6[is.na(rand_hrs_jags$r11adltot6)] <- median(rand_hrs_jags$r11adltot6, na.rm = T)
-rand_hrs_jags$r12adltot6[is.na(rand_hrs_jags$r12adltot6)] <- median(rand_hrs_jags$r12adltot6, na.rm = T)
-rand_hrs_jags$r13adltot6[is.na(rand_hrs_jags$r13adltot6)] <- median(rand_hrs_jags$r13adltot6, na.rm = T)
-rand_hrs_jags$r14adltot6[is.na(rand_hrs_jags$r14adltot6)] <- median(rand_hrs_jags$r14adltot6, na.rm = T)
-rand_hrs_jags$r15adltot6[is.na(rand_hrs_jags$r15adltot6)] <- median(rand_hrs_jags$r15adltot6, na.rm = T)
-
-table(rand_hrs_jags$r15email, useNA = "always")
-
-```
-
+\~\~
 
 ```{r}
 #y <- as.numeric(unlist(rand_hrs_jags[, c("r6email", "r7email", "r8email", "r9email", "r10email", 
                         #                 "r11email", "r12email", "r13email", "r14email", "r15email")]))
 
+baseline_age <- rand_hrs_jags %>%
+  rowwise() %>%
+  mutate(r_age_baseline = coalesce(r6agey_e, r7agey_e, r8agey_e, r9agey_e, r10agey_e,
+                                   r11agey_e, r12agey_e, r13agey_e, r14agey_e, r15agey_e)) %>%
+  ungroup() %>%                              
+  select(hhidpn, r_age_baseline)
+
+rand_hrs_jags <- rand_hrs_jags %>%
+  left_join(baseline_age, by = "hhidpn")
+
 df_long <- rand_hrs_jags %>%
+  # filter(!is.na(r_age_baseline)) %>% 
+  # filter(!is.na(raeducl_2)) %>%
+  # filter(!is.na(raeducl_3)) %>%
+  # filter(!is.na(raracem_1)) %>% 
   zap_labels() %>% 
   zap_formats() %>% 
   zap_label() %>% 
   dplyr::select(
     hhidpn,
     r6cesd:r15cesd,
-    r6chron_disease:r15chron_disease,
+    r6conde:r15conde,
     r6iadltot_h:r15iadltot_h,
     r6adltot6:r15adltot6,
     r6email:r15email
@@ -796,89 +1160,365 @@ df_long <- rand_hrs_jags %>%
     names_to = c("wave", "variable"),  
     names_pattern = "r(\\d+)_?(.*)"    
  ) %>%
-mutate(time = as.integer(wave) - 6) %>%
+mutate(wave = as.integer(wave),
+       wave_number = wave,
+       tt = wave - 6) %>%
  pivot_wider(
     names_from = variable,   
     values_from = value      
   ) %>%
-  arrange(hhidpn, wave) %>% 
+  arrange(hhidpn, wave_number) %>% 
   dplyr::select(!cesdm) %>% 
   dplyr::select(!adltot6m) %>% 
   dplyr::select(!adltot6a)
 
+df_long <- df_long %>%
+  left_join(rand_hrs_jags %>% select(hhidpn, first_wave), by = "hhidpn") %>%
+  filter(wave_number >= first_wave) %>% 
+  mutate(tt_since_entry = wave_number - first_wave) %>%
+  filter(!is.na(email))
 
 
-tt <- df_long$time
+vars_to_impute <- c(
+  "cesd",
+  "conde",
+  "iadltot_h",
+  "adltot6",
+    "raracem",
+  "raeducl",
+  "ragender"
+
+)
+
+
+
+  
+```
+
+```{r}
+# gc()
+# 
+# library("labelled")
+# library("miceadds")
+# rand_hrs <- remove_labels(rand_hrs)
+# meth  <- rep("", ncol(rand_hrs))
+# names(meth) <- names(rand_hrs)
+# meth[vars_to_impute] <- "2l.pmm"
+# 
+# pred <- make.predictorMatrix(rand_hrs)
+# diag(pred) <- 0
+# cluster <- rand_hrs$hhidpn 
+# rows_not_imputed <- setdiff(names(rand_hrs), vars_to_impute)
+# pred[rows_not_imputed, ] <- 0
+# 
+# 
+# 
+# 
+# 
+# 
+# imputed_data <- mice(rand_hrs, method = meth, predictorMatrix = pred, m = 1, cluster = cluster)
+# rm(rand_hrs_data)
+# gc()
+# rand_hrs_jags_impute <- complete(imputed_data, 1)
+# ## 48 rows droppped as not enough information kept to be imputedv
+# #na_rows <- which(is.na(rand_hrs_jags_impute$raeducl))
+# #rand_hrs_jags_impute <- rand_hrs_jags_impute[-na_rows, ]
+# 
+# #imputed_list <- lapply(1:5, function(i) complete(imputed_data, i))
+```
+
+```{r}
+
+
+# df_long <- df_long %>% 
+#   filter(!is.na(cesd)) %>% 
+#   filter(!is.na(conde)) %>%
+#   filter(!is.na(iadltot_h)) %>%
+#   filter(!is.na(adltot6)) 
+
+
+
+X1 <- as.matrix(df_long[, c("cesd", "conde", "iadltot_h", "adltot6")]) 
+subjects_keep <- unique(df_long$hhidpn)
+
+rand_sub <- rand_hrs_jags %>%
+  filter(hhidpn %in% subjects_keep) %>% 
+  arrange(match(hhidpn, subjects_keep))
+
+
+
+tt <- df_long$tt_since_entry
 
 N <- nrow(df_long)
 n <- length(unique(df_long$hhidpn))
 
 ID <- as.integer(factor(df_long$hhidpn))
 
-X1 <- as.matrix(df_long[, c("cesd", "chron_disease", "iadltot_h", "adltot6")]) 
-
-cens_time <- rand_hrs_jags$event_time  
-status <- rand_hrs_jags$event         
+cens_time <- rand_sub$event_time
+status <- rand_sub$status         
 
 
-max_censor_time <- 6 
+max_censor_time <- 10
 
-cens_time[status == 0] <- max_censor_time  
+cens_time[status == 0] <- pmin(cens_time[status == 0], max_censor_time)
 
 
 
 time <- cens_time  
 
+
 #status <- as.numeric(is.na(cens_time)) 
+# y_int <- df_long$email 
+ #complete_cases <- complete.cases(y, tt, ID)
+# y <- y_int[complete_cases]
 
-y <- df_long$email 
+y_full <- df_long$email  # this includes NAs
+
+y <- as.integer(df_long$email)
+
+# 2. Create missingness indicator R: 1 = observed, 0 = missing
+R <- as.integer(!is.na(y))
+
+# 3. Indices of observed and missing values
+obs_index <- which(R == 1)
+miss_index <- which(R == 0)
+
+# 4. Observed y values
+y_obs <- y_full[obs_index]
+
+# 5. Bookkeeping counts
+N_obs <- length(y_obs)
+N_miss <- length(miss_index)
+
+participant_ids <- unique(df_long$hhidpn)
 
 
 
-X2 <- model.matrix(~ ragender + r6agey_e + raeducl2 + raeducl3 + raracem1_r, data = rand_hrs_jags)
+rand_sub2 <- rand_sub %>%
+  mutate(across(c(ragender, raeducl_2, raeducl_3, raracem_1),
+                ~ suppressWarnings(as.numeric(as.character(.)))))
 
-data_save <- list(N = N, n = n, nX1 = ncol(X1), nX2 = ncol(X2), 
-                         y = y, tt = tt, X1 = X1, ID = ID, 
-                         time = time, status = status, X2 = X2)
-save(data_save, file = "model_data.RData")
+
+mf <- model.frame(~ ragender + r_age_baseline + raeducl_2 + raeducl_3 + raracem_1,
+                  data = rand_sub2, na.action = na.pass)
+
+X2 <- model.matrix(attr(mf, "terms"), data = mf)
+
+  
+
+X1_obs <- X1
+ X1_obs[is.na(X1_obs)] <- -1000
+X1_missing_locs <- which(is.na(X1), arr.ind = TRUE)
+X1_nMiss <- nrow(X1_missing_locs)
+ X1_col_index <- X1_missing_locs[, 2]
+X1_row_index <- X1_missing_locs[, 1]
+
+X2_obs <- X2
+ X2_obs[is.na(X2_obs)] <- -1000
+ X2_missing_locs <- which(is.na(X2), arr.ind = TRUE)
+ X2_nMiss <- nrow(X2_missing_locs)
+ X2_row_index <- X2_missing_locs[, 1]
+ X2_col_index <- X2_missing_locs[, 2]
+
+data_list <- list(
+  N = N,
+  n = n,
+  nX1 = ncol(X1),
+  nX2 = ncol(X2),
+
+  #R = R,               # missingness indicator for y
+  R = R,
+  N_obs = N_obs,
+  N_miss = N_miss,
+  obs_index = obs_index,
+  miss_index = miss_index,
+
+  y = y,           # only observed values
+  tt = tt,
+  X1 = X1_obs,
+  ID = ID,
+  time = time,
+  status = status,
+  X2 = X2_obs,
+
+  X1_nMiss = X1_nMiss,
+  X1_row_index = X1_row_index,
+  X1_col_index = X1_col_index,
+  #
+  X2_nMiss = X2_nMiss,
+  X2_row_index = X2_row_index,
+  X2_col_index = X2_col_index
+
+  
+)
+
+
+```
+
+```{r}
+library(cmdstanr)
+
+save(data_list, file = "model_data_miss.RData")
+
+model <- cmdstan_model("/home/danny/Documents/projects/aadl_hrs/jm-no-miss.stan",
+                       cpp_options = list(stan_threads = TRUE))
+
+data_list_small <- local({
+  set.seed(123)
+
+  # --- 1. Choose a subset of participants
+  n_sub <- 2000   # pick how many participants you want
+  sub_ids <- sort(sample(unique(data_list$ID), n_sub))
+
+  # --- 2. Filter longitudinal data
+  keep_long <- data_list$ID %in% sub_ids
+
+  # Map old participant IDs to 1..n_sub (Stan expects consecutive indices)
+  id_map <- match(data_list$ID[keep_long], sub_ids)
+
+  # --- 3. Build smaller data list
+  list(
+    N = sum(keep_long),
+    n = n_sub,
+    nX1 = data_list$nX1,
+    nX2 = data_list$nX2,
+
+    N_obs = sum(data_list$obs_index %in% which(keep_long)),
+    obs_index = match(data_list$obs_index[data_list$obs_index %in% which(keep_long)],
+                      which(keep_long)),
+    y = data_list$y[data_list$obs_index %in% which(keep_long)],
+
+    tt = data_list$tt[keep_long],
+    X1 = data_list$X1[keep_long, , drop = FALSE],
+    ID = id_map,
+
+    time = data_list$time[sub_ids],
+    status = data_list$status[sub_ids],
+    X2 = data_list$X2[sub_ids, , drop = FALSE],
+
+    # Missing data subsets (optional, only if you’re imputing)
+    X1_nMiss = 0L,
+    X1_row_index = integer(0),
+    X1_col_index = integer(0),
+    X2_nMiss = 0L,
+    X2_row_index = integer(0),
+    X2_col_index = integer(0)
+  )
+})
  
-fit <- stan(file = "/home/danny/Documents/projects/aadl_hrs/JM.stan",
-            data = list(N = N, n = n, nX1 = ncol(X1), nX2 = ncol(X2), 
-                         y = y, tt = tt, X1 = X1, ID = ID, 
-                         time = time, status = status, X2 = X2),
-           warmup = 1000,                 
-           iter   = 2000,
-           chains = 3,
-           seed   = 123,
-           cores  = getOption("mc.cores",9)
-          )
-
+fit_miss <- model$sample(data = data_list, 
+                         seed = 123, chains = 4, 
+                         parallel_chains = 4, 
+                         iter_warmup = 2000, 
+                         iter_sampling = 8000, 
+                         threads_per_chain = 3, 
+                         output_dir = "stan_output", 
+                         thin = 3, 
+                         max_treedepth = 10)
 ```
 
 ```{r}
-launch_shinystan(fit)
+#saveRDS(fit_miss, file = "fit_miss.rds")
+fit_no_miss$save_object("fit_no_miss.rds")
+post_samples_miss <- fit_miss$summary()
 
+rm(data_lw)
+rm(H_HRS_d)
+rm(rand)
+rm(imputed_data)
+rm(imputed_list)
+rm(pred)
+rm(rand_hrs)
+rm(randhrs1992_2020v2)
+rm(rand_hrs_jags_impute)
+gc()
+
+csv_files <- list.files("/home/danny/Documents/projects/aadl_hrs/stan_output", full.names = TRUE, pattern = "\\.csv$")
+fit_no_miss <- as_cmdstan_fit(csv_files)
 ```
 
 ```{r}
-post_samples <- rstan::extract(fit)
-```
+library(data.table)
+library(posterior)
+library(cmdstanr)
 
+csv_files <- dir("/home/danny/Documents/projects/aadl_hrs/stan_output", pattern = "*.csv", full.names = TRUE)
+
+
+dt <- lapply(csv_files, function(f) {
+  fread(cmd = paste("grep -v '^#'", f), select = c("alpha.1", "alpha.2",
+    "gamma.1",
+                                                   "gamma.2", 
+                                                   "gamma.3",
+                                                   "gamma.4",
+                                                   "gamma.5",
+                                                   "gamma.6"))
+})
+
+
+dt_list <- lapply(seq_along(dt), function(i) {
+  dt[[i]][, chain := i]
+})
+
+# Step 2: Melt each chain to long format and combine into one long table
+dt_long <- rbindlist(lapply(dt_list, function(dt) {
+  melt(dt, id.vars = "chain", variable.name = "parameter", value.name = "value")
+}))
+
+# Step 3: Compute posterior mean and 95% credible intervals per parameter
+summary_dt <- dt_long[, .(
+  mean = mean(value),
+  q2.5 = quantile(value, 0.025),
+  q97.5 = quantile(value, 0.975)
+), by = parameter]
+fwrite(summary_dt, "posterior_subset_summary.csv")
+
+
+```
 
 ```{r}
 # Extract relevant posterior samples from the Stan model
-alpha_samples <- post_samples$alpha
-gamma_samples <- post_samples$gamma
-bi_samples <- post_samples$bi
-phi_samples <- post_samples$phi
-sex <- rand_hrs_jags$ragender
+#alpha_samples <- post_samples$alpha
+#gamma_samples <- post_samples$gamma
+#bi_samples <- post_samples$bi
+#phi_samples <- post_samples$phi
+# alpha_samples <- as_draws_matrix(fit_miss$draws("alpha"))  # draws x 2
+# phi_samples   <- as.vector(as_draws_matrix(fit_miss$draws("phi")))  # draws
+# gamma_samples <- as_draws_matrix(fit_miss$draws("gamma"))  # draws x nX2
+# alpha_samples <- as_draws_matrix(fit_miss$draws("alpha"))  # draws x 2
+# phi_samples   <- as.vector(as_draws_matrix(fit_miss$draws("phi")))  # draws
+# gamma_samples <- as_draws_matrix(fit_miss$draws("gamma"))  # draws x nX2
+# 
+# bi_draws <- fit_miss$draws("bi")
+# bi_mat <- as_draws_matrix(bi_draws)
+# 
+# # bi1 and bi2: draws x n
+# bi1_mat <- bi_mat[, grepl(",1]", colnames(bi_mat)), drop = FALSE]
+# bi2_mat <- bi_mat[, grepl(",2]", colnames(bi_mat)), drop = FALSE]
+# phi_samples    <- as.array(fit_miss$draws("phi"))
+
+library(posterior)
+library(data.table)
+
+
+alpha_samples <- as_draws_array(fit_no_miss$draws("alpha")) # Extract phi: draws x chains x 
+phi_samples <- as_draws_array(fit_no_miss$draws("phi")) # Extract gamma: draws x chains x nX2 
+gamma_samples <- as_draws_array(fit_no_miss$draws("gamma")) # Extract bi: draws x chains x n x 2 
+bi_samples <- as_draws_array(fit_no_miss$draws("bi")) 
+n_draws <- dim(alpha_samples)[1] * dim(alpha_samples)[2] # draws x chains flattened # Flatten alpha to draws x 2 
+alpha_flat <- matrix(alpha_samples, nrow = n_draws, ncol = 2) # Flatten phi to draws vector 
+phi_flat <- as.vector(phi_samples) # Flatten gamma to draws x nX2 
+gamma_flat <- matrix(gamma_samples, nrow = n_draws, ncol = dim(gamma_samples)[3]) # Flatten bi to draws x n x 2 
+bi_flat <- array(bi_samples, dim = c(n_draws, dim(bi_samples)[3], 2))
+
+sex <- rand_sub$ragender
 
 # Number of individuals (n)
-n <- 3862
+n <- nrow(rand_sub)
 
 # Grid of time points to evaluate survival curves
 grid <- 1000
-time <- seq(0.001, max(df_long$time), length.out = grid)
+time <- seq(0.001, max(df_long$tt), length.out = grid)
 
 # Prepare an empty matrix to store the survival curves
 surv <- matrix(NA, n, grid)
@@ -888,34 +1528,40 @@ surv <- matrix(NA, n, grid)
 
 # Compute survival probabilities
 for (i in 1:n) {
+  # Lambda for this patient: draws x 1
+  lambda <- exp(gamma_flat %*% X2[i, ])
+
   for (k in 1:grid) {
-    # Compute lambda for patient i
-    lambda <- exp(rowSums(gamma_samples * matrix(rep(X2[i,], each = nrow(gamma_samples)), 
-                                                 nrow = nrow(gamma_samples), byrow = FALSE)))
-    
-    # Compute survival function at time[k]
-    if (k <= length(time)) {
-      survival_curve <- exp(-lambda * exp(alpha_samples[, 1] * bi_samples[, i, 1] + 
-                                          alpha_samples[, 2] * bi_samples[, i, 2]) * 
-                                          time[k]^phi_samples)
-      surv[i, k] <- mean(survival_curve)
-    } else {
-      stop("Error: k exceeds length of time vector")
-    }
+    t_k <- time[k]
+
+    survival_curve <- exp(
+      - lambda * exp(alpha_flat[,1] * bi_flat[,i,1] +
+                     alpha_flat[,2] * bi_flat[,i,2]) *
+      t_k^phi_flat
+    )
+
+    surv[i,k] <- mean(survival_curve)
   }
 }
 
 
-
 ```
+
 ## Internet Use
 
 ```{r}
-# Create a dataframe for plotting with ggplot
-email_col <- as.character(as_factor(rand_hrs_jags$r6email))
-email_col[email_col == "0.no"] <- "No Internet Use at Baseline"
-email_col[email_col == "1.yes"] <- "Internet Use at Baseline"
+baseline_email_df <- df_long %>%
+  group_by(hhidpn) %>%
+  filter(wave_number == first_wave) %>%
+  summarise(email_baseline = first(email)) %>%
+  ungroup()
 
+rand_sub <- rand_sub %>%
+  left_join(baseline_email_df, by = "hhidpn")
+
+email_col <- as.character(as_factor(rand_sub$email_baseline))
+email_col[email_col == "0"] <- "No Internet Use at Baseline"
+email_col[email_col == "1"] <- "Internet Use at Baseline"
 # Convert the survival matrix to a long format for ggplot
 df_email <- data.frame(time = rep(time, n),
                  survival = c(t(surv)),
@@ -938,6 +1584,15 @@ ggplot(data = df_email, aes(x = time, y = survival, group = patient, colour = em
 #  Compute mean survival probability for each patient
 mean_survival <- rowMeans(surv, na.rm = TRUE)
 
+overall_survival <- colMeans(surv, na.rm = TRUE)
+
+df_overall <- data.frame(
+  time = time,
+  survival = overall_survival,
+  quartile = "Overall Mean"
+)
+
+
 # Assign patients to quartiles based on mean survival probability
 quartile_labels <- c("Q1 (Lowest 25%)", "Q2 (25-50%)", "Q3 (50-75%)", "Q4 (Highest 25%)")
 quartile_groups <- cut(mean_survival, 
@@ -955,8 +1610,8 @@ for (q in quartile_labels) {
   for (s in c("No Internet Use at Baseline", "Internet Use at Baseline")) {
     idx <- which(email_col == s & quartile_groups == q)  
     if (length(idx) > 0) {
-      df_grouped_email$survival[df_grouped_email$quartile == q & df_grouped_email$email == s] <- colMeans(surv[idx, ], na.rm = TRUE)
-      df_grouped_email$sd[df_grouped_email$quartile == q & df_grouped_email$email == s] <- apply(surv[idx, ], 2, sd, na.rm = TRUE)  
+      df_grouped_email$survival[df_grouped_email$quartile == q & df_grouped_email$email == s] <- colMeans(surv[idx, , drop = FALSE], na.rm = TRUE)
+      df_grouped_email$sd[df_grouped_email$quartile == q & df_grouped_email$email == s] <- apply(surv[idx, , drop = FALSE], 2, sd, na.rm = TRUE)  
     }
   }
 }
@@ -970,6 +1625,8 @@ df_grouped_email <- df_grouped_email %>%
 email_plot <- ggplot(data = df_grouped_email, aes(x = time, y = survival, colour = email, linetype = quartile)) +
   geom_line(size = 1) +  
   #geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.05) +  # Shaded area for standard deviation
+  geom_line(data = df_overall, aes(x = time, y = survival),
+            colour = "black", size = 1.2) +
   theme_bw() +
   theme(legend.position = "right") +
   labs(title = "Survival Curves by Quartiles and Baseline Internet Use", 
@@ -985,7 +1642,11 @@ email_plot <- ggplot(data = df_grouped_email, aes(x = time, y = survival, colour
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
   scale_fill_manual(values = c("No Internet Use at Baseline" = "#d95f02", 
                                "Internet Use at Baseline" = "#1b9e77")) +  # Shading matches line color
-  scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash"))  # Different line types for quartiles
+  scale_linetype_manual(values = c("Q1 (Lowest 25%)" = "solid",
+               "Q2 (25-50%)" = "dashed",
+               "Q3 (50-75%)" = "dotted",
+               "Q4 (Highest 25%)" = "dotdash",
+               "Overall Mean" = "twodash"))  # Different line types for quartiles
 
 ggsave(filename = "email plot no shading.png", 
        plot = email_plot,
@@ -993,11 +1654,12 @@ ggsave(filename = "email plot no shading.png",
        width = 12,
        height = 8)
 ```
+
 ## Education
 
 ```{r}
 # Create a dataframe for plotting with ggplot
-edu_col <- as.character(as_factor(rand_hrs_jags$raeducl))
+edu_col <- as.character(as_factor(rand_sub$raeducl))
 edu_col[edu_col == "1"] <- "Less than Upper Secondary"
 edu_col[edu_col == "2"] <- "Upper Secondary and Vocational"
 edu_col[edu_col == "3"] <- "Tertiary"
@@ -1053,8 +1715,8 @@ for (q in quartile_labels) {
     for (s in c("No Internet Use at Baseline", "Internet Use at Baseline")) {
       idx <- which(edu_col == e & quartile_groups == q & email_col == s)
       if (length(idx) > 0) {
-        df_grouped_edu$survival[df_grouped_edu$quartile == q & df_grouped_edu$edu == e & df_grouped_edu$email == s] <- colMeans(surv_matrix[idx, ], na.rm = TRUE)
-        df_grouped_edu$sd[df_grouped_edu$quartile == q & df_grouped_edu$edu == e & df_grouped_edu$email == s] <- apply(surv_matrix[idx, ], 2, sd, na.rm = TRUE)
+        df_grouped_edu$survival[df_grouped_edu$quartile == q & df_grouped_edu$edu == e & df_grouped_edu$email == s] <- colMeans(surv_matrix[idx, , drop = FALSE], na.rm = TRUE)
+        df_grouped_edu$sd[df_grouped_edu$quartile == q & df_grouped_edu$edu == e & df_grouped_edu$email == s] <- apply(surv_matrix[idx, , drop = FALSE], 2, sd, na.rm = TRUE)
       }
     }
   }
@@ -1065,11 +1727,15 @@ df_grouped_edu <- df_grouped_edu %>%
   mutate(lower = pmax(survival - sd, 0),  
          upper = pmin(survival + sd, 1))  
 
+df_grouped_edu$email <- df_grouped_email$email[match(df_grouped_edu$time, df_grouped_email$time)]
+
 
 #: Plot the quartile-based survival curves with shading
 edu_plot <- ggplot(data = df_grouped_edu, aes(x = time, y = survival, colour = edu, linetype = quartile)) +
   geom_line(size = 1) +  
   #geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.0005) +  # Shaded area for standard deviation
+    geom_line(data = df_overall, aes(x = time, y = survival),
+            colour = "black", size = 1.2) +
   theme_bw() +
   theme(legend.position = "top") +
   labs(title = "Survival Curves by Quartiles and Education Level", 
@@ -1081,19 +1747,23 @@ edu_plot <- ggplot(data = df_grouped_edu, aes(x = time, y = survival, colour = e
 #  scale_fill_manual(values = c("Less than Upper Secondary" = "#1b9e77", 
  #                                "Upper Secondary and Vocational" = "#d95f02",
   #                               "Tertiary" = "#7570b3")) +  # Shading matches line color
-  scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
-  facet_wrap(~as.factor(df_grouped_email$email))
+    scale_linetype_manual(values = c("Q1 (Lowest 25%)" = "solid",
+               "Q2 (25-50%)" = "dashed",
+               "Q3 (50-75%)" = "dotted",
+               "Q4 (Highest 25%)" = "dotdash",
+               "Overall Mean" = "twodash"))  +
+  facet_wrap(~as.factor(email))
 
 print(edu_plot)
 
 ```
 
 ```{r}
-email_col <- as.character(as_factor(rand_hrs_jags$r6email))
-email_col[email_col == "0.no"] <- "No Internet Use at Baseline"
-email_col[email_col == "1.yes"] <- "Internet Use at Baseline"
+email_col <- as.character(as_factor(rand_sub$email_baseline))
+email_col[email_col == "0"] <- "No Internet Use at Baseline"
+email_col[email_col == "1"] <- "Internet Use at Baseline"
 
-edu_col <- as.character(as_factor(rand_hrs_jags$raeducl))
+edu_col <- as.character(as_factor(rand_sub$raeducl))
 edu_col[edu_col == "1"] <- "Less than Upper Secondary"
 edu_col[edu_col == "2"] <- "Upper Secondary and Vocational"
 edu_col[edu_col == "3"] <- "Tertiary"
@@ -1172,6 +1842,8 @@ df_grouped_edu_email <- df_grouped_edu_email %>%
 # Plot the quartile-based survival curves with faceting by email use
 edu_plot <- ggplot(data = df_grouped_edu_email, aes(x = time, y = survival, colour = edu, linetype = quartile)) +
   geom_line(size = 1) +  
+  geom_line(data = df_overall, aes(x = time, y = survival),
+            colour = "black", size = 1.2) +
   theme_bw() +
   theme(legend.position = "right") +
   labs(title = "Survival Curves by Quartiles, Education Level, and Internet Use", 
@@ -1184,7 +1856,11 @@ edu_plot <- ggplot(data = df_grouped_edu_email, aes(x = time, y = survival, colo
                                  "Upper Secondary\n and Vocational",
                                  "Tertiary")) +
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
-  scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_linetype_manual(values = c("Q1 (Lowest 25%)" = "solid",
+               "Q2 (25-50%)" = "dashed",
+               "Q3 (50-75%)" = "dotted",
+               "Q4 (Highest 25%)" = "dotdash",
+               "Overall Mean" = "twodash"))  +
   facet_wrap(~email)
 
 ggsave(filename = "edu plot no shading facet.png", 
@@ -1195,39 +1871,37 @@ ggsave(filename = "edu plot no shading facet.png",
 ```
 
 ```{r}
-df_participants <- data.frame(
-  email = email_col,
-  edu = edu_col,
-  quartile = quartile_groups
-)
-
-table(df_participants$email, df_participants$edu, df_participants$quartile)
+# df_participants <- data.frame(
+#   email = email_col,
+#   edu = edu_col,
+#   quartile = quartile_groups
+# )
+# 
+# table(df_participants$email, df_participants$edu, df_participants$quartile)
 ```
 
 ```{r}
-overall_means <- df_grouped_edu_email %>%
-  group_by(quartile, edu, email) %>%
-  summarise("Mean Survival Probability" = mean(survival, na.rm = TRUE),
-            "Standard Deviation" = sd(survival, na.rm = TRUE),
-            .groups = "drop") %>% 
-  mutate(across(where(is.numeric), ~ round(.x, 2))) %>%
-    rename_with(~ str_to_title(.), .cols = c("quartile", "edu", "email"))
-
-table_html_edu <- overall_means %>%
-  flextable() %>%
-  autofit()
-
-# Save as HTML file
-save_as_html(table_html_edu, path = "survival_table_edu.html")
+# overall_means <- df_grouped_edu_email %>%
+#   group_by(quartile, edu, email) %>%
+#   summarise("Mean Survival Probability" = mean(survival, na.rm = TRUE),
+#             "Standard Deviation" = sd(survival, na.rm = TRUE),
+#             .groups = "drop") %>% 
+#   mutate(across(where(is.numeric), ~ round(.x, 2))) %>%
+#     rename_with(~ str_to_title(.), .cols = c("quartile", "edu", "email"))
+# 
+# table_html_edu <- overall_means %>%
+#   flextable() %>%
+#   autofit()
+# 
+# # Save as HTML file
+# save_as_html(table_html_edu, path = "survival_table_edu.html")
 ```
-
-
 
 ## Race
 
 ```{r}
 # Create a dataframe for plotting with ggplot
-race_col <- as.character(as_factor(rand_hrs_jags$raracem))
+race_col <- as.character(as_factor(rand_sub$raracem))
 race_col[race_col == "1"] <- "White/Caucasian"
 race_col[race_col %in% c("2", "3")] <- "Non-White"
 
@@ -1253,10 +1927,9 @@ ggplot(data = df_race, aes(x = time, y = survival, group = patient, colour = rac
 #Compute mean survival probability for each patient
 mean_survival <- rowMeans(surv, na.rm = TRUE)
 
-email_col <- as.character(as_factor(rand_hrs_jags$r6email))
-email_col[email_col == "0.no"] <- "No Internet Use at Baseline"
-email_col[email_col == "1.yes"] <- "Internet Use at Baseline"
-
+email_col <- as.character(as_factor(rand_sub$email_baseline))
+email_col[email_col == "0"] <- "No Internet Use at Baseline"
+email_col[email_col == "1"] <- "Internet Use at Baseline"
 
 
 df <- data.frame(
@@ -1328,6 +2001,8 @@ df_grouped_race <- df_grouped_race %>%
 race_plot <- ggplot(data = df_grouped_race, aes(x = time, y = survival, colour = race, linetype = quartile)) +
   geom_line(size = 1) +  
   #geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.0005) +  # Shaded area for standard deviation
+  geom_line(data = df_overall, aes(x = time, y = survival),
+            colour = "black", size = 1.2) +
   theme_bw() +
   theme(legend.position = "right") +
   labs(title = "Survival Curves by Quartiles and Race", 
@@ -1338,7 +2013,11 @@ race_plot <- ggplot(data = df_grouped_race, aes(x = time, y = survival, colour =
 #  scale_fill_manual(values = c("Less than Upper Secondary" = "#1b9e77"     , 
  #                                "Upper Secondary and Vocational" = "#d95f02",
   #                               "Tertiary" = "#7570b3")) +  # Shading matches line color
-  scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+      scale_linetype_manual(values = c("Q1 (Lowest 25%)" = "solid",
+               "Q2 (25-50%)" = "dashed",
+               "Q3 (50-75%)" = "dotted",
+               "Q4 (Highest 25%)" = "dotdash",
+               "Overall Mean" = "twodash"))  + 
   facet_wrap(~email)
 
 ggsave(filename = "race plot no shading facet.png", 
@@ -1365,7 +2044,144 @@ table_html_race <- overall_means %>%
 save_as_html(table_html_race, path = "survival_table_race.html")
 ```
 
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(posterior)  # for as_draws_df
 
+# ---- 1. Extract posterior mean slopes (bi[,2]) per patient ----
+post <- as_draws_df(fit_no_miss)  # fit_miss = your cmdstanr/rstan fit
+
+# Columns like "bi[1,2]", "bi[2,2]", ..., one per patient
+slope_numeric_vec <- post %>%
+  select(starts_with("bi[") & ends_with(",2]")) %>%
+  summarise(across(everything(), mean)) %>%
+  as.numeric()
+
+# Confirm length matches number of patients
+stopifnot(length(slope_numeric_vec) == nrow(surv))
+
+# ---- 2. Convert numeric slopes to categorical slope groups ----
+slope_group_labels <- ifelse(slope_numeric_vec < 0, "Decreasing", "Increasing")
+
+# ---- 3. Prepare survival matrix for long format ----
+n2 <- 20350
+colnames(surv) <- as.character(time)  # make time column names characters
+
+df_slope_long <- as.data.frame(surv) %>%
+  mutate(patient = seq_len(n2),
+         slope_group = slope_group_labels) %>%
+  pivot_longer(cols = -c(patient, slope_group),
+               names_to = "time", values_to = "survival") %>%
+  mutate(time = as.numeric(time))
+
+# sanity check
+stopifnot(nrow(df_slope_long) == n2 * length(time))
+
+# ---- 4. Compute group-level mean and SD ----
+df_group_mean <- df_slope_long %>%
+  group_by(time, slope_group) %>%
+  summarise(
+    n_patients = n_distinct(patient),
+    survival = mean(survival, na.rm = TRUE),
+    sd = sd(survival, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    lower = pmax(survival - sd, 0),
+    upper = pmin(survival + sd, 1)
+  )
+
+# ---- 5. Ensure factor ordering for plotting ----
+df_group_mean$slope_group <- factor(df_group_mean$slope_group,
+                                    levels = c("Decreasing", "Stable", "Increasing"))
+
+# ---- 6. Plot mean survival curves with ribbons ----
+p <- ggplot(df_group_mean, aes(x = time, y = survival, colour = slope_group, group = slope_group)) +
+  geom_line(size = 1.2) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = slope_group), alpha = 0.15, colour = NA) +
+  theme_bw() +
+  labs(title = "Mean Survival Curves by Internet Use Change",
+       x = "Time", y = "Survival Probability",
+       colour = "Slope Group", fill = "Slope Group") +
+  scale_colour_manual(values = c("Decreasing" = "#d95f02", "Increasing" = "#1b9e77")) +
+  scale_fill_manual(values = c("Decreasing" = "#d95f02", "Increasing" = "#1b9e77")) +
+  coord_cartesian(ylim = c(0, 1))
+
+print(p)
+
+```
+
+```{r}
+mean_survival <- rowMeans(surv, na.rm = TRUE)
+
+# ---- 2. Assign patients to quartiles based on mean survival ----
+quartile_labels <- c("Q1 (Lowest 25%)", "Q2 (25-50%)", "Q3 (50-75%)", "Q4 (Highest 25%)")
+slope_quartiles <- cut(mean_survival, 
+                       breaks = quantile(mean_survival, probs = seq(0, 1, 0.25), na.rm = TRUE),
+                       include.lowest = TRUE,
+                       labels = quartile_labels)
+
+slope_group <- ifelse(slope_numeric_vec < 0, "Decreasing", "Increasing")
+# ---- 3. Prepare survival matrix for long format ----
+n2 <- nrow(surv)
+colnames(surv) <- as.character(time)
+
+df_slope_long <- as.data.frame(surv) %>%
+  mutate(patient = seq_len(n2),
+         quartile = slope_quartiles,
+         slope_group=slope_group) %>%
+  pivot_longer(cols = -c(patient, slope_group, quartile),
+               names_to = "time", values_to = "survival") %>%
+  mutate(time = as.numeric(time))
+
+stopifnot(nrow(df_slope_long) == n2 * length(time))
+
+# ---- 4. Compute group-level mean and SD ----
+df_group_mean <- df_slope_long %>%
+  group_by(time, slope_group, quartile) %>%
+  summarise(
+    n_patients = n_distinct(patient),
+    survival = mean(survival, na.rm = TRUE),
+    sd = sd(survival, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    lower = pmax(survival - sd, 0),
+    upper = pmin(survival + sd, 1)
+  )
+
+# ---- 5. Ensure factor ordering for plotting ----
+df_group_mean$quartile <- factor(df_group_mean$quartile, levels = quartile_labels)
+
+# ---- 6. Plot mean survival curves by survival quartile ----
+quartile_plot <- ggplot(df_group_mean, aes(x = time, y = survival, colour = slope_group, linetype = quartile)) +
+  geom_line(size = 1.2) +
+  geom_line(data = df_overall, aes(x = time, y = survival),
+            colour = "black", size = 1.2) +
+  #geom_ribbon(aes(ymin = lower, ymax = upper, fill = slope_group), alpha = 0.15, colour = NA) +
+  theme_bw() +
+  labs(title = "Mean Survival Curves by Internet Use Change",
+       x = "Time", y = "Survival Probability",
+       colour = "Slope Group", fill = "Slope Group") +
+  scale_colour_manual(values = c("Decreasing" = "#d95f02", "Increasing" = "#1b9e77")) +
+  scale_fill_manual(values = c("Decreasing" = "#d95f02", "Increasing" = "#1b9e77")) +
+       scale_linetype_manual(values = c("Q1 (Lowest 25%)" = "solid",
+                "Q2 (25-50%)" = "dashed",
+                "Q3 (50-75%)" = "dotted",
+               "Q4 (Highest 25%)" = "dotdash",
+               "Overall Mean" = "twodash"))   +
+  coord_cartesian(ylim = c(0, 1))
+
+print(quartile_plot)
+
+ggsave(filename = "slope plot no shading facet.png", 
+       plot = quartile_plot,
+       dpi = 300,
+       width = 12,
+       height = 8)
+```
 
 # No Covariate Model
 
@@ -1419,4 +2235,316 @@ launch_shinystan(fit_no_cov)
 
 ```
 
+```{r}
+rand_hrs2 <- inner_join(rand, hrs_email2, by = "hhidpn")
+
+```
+
+```{r}
+data_lw <- data_lw %>% 
+  dplyr::select(
+    hhid,
+    pn,
+    cogtot27_imp2002,
+    cogtot27_imp2004,
+    cogtot27_imp2006,
+    cogtot27_imp2008,
+    cogtot27_imp2010,
+    cogtot27_imp2012,
+    cogtot27_imp2014,
+    cogtot27_imp2016,
+    cogtot27_imp2018,
+    cogtot27_imp2020,
+    prxyscore_imp2002,
+    prxyscore_imp2004,
+    prxyscore_imp2006,
+    prxyscore_imp2008,
+    prxyscore_imp2010,
+    prxyscore_imp2012,
+    prxyscore_imp2014,
+    prxyscore_imp2016,
+    prxyscore_imp2018,
+    prxyscore_imp2020,
+    cogfunction2002,
+    cogfunction2004,
+    cogfunction2006,
+    cogfunction2008,
+    cogfunction2010,
+    cogfunction2012,
+    cogfunction2014,
+    cogfunction2016,
+    cogfunction2018,
+    cogfunction2020
+  )
+
+data_lw$hhidpn <- paste(data_lw$hhid, data_lw$pn, sep = "")
+
+data_lw2 <- data_lw %>% 
+   filter(is.na(cogtot27_imp2002)) %>% 
+  filter(is.na(cogtot27_imp2004)) %>% 
+  filter(is.na(cogtot27_imp2006)) %>% 
+  filter(is.na(cogtot27_imp2008)) %>% 
+  filter(is.na(cogtot27_imp2010)) %>% 
+  filter(is.na(cogtot27_imp2012)) %>% 
+  filter(is.na(cogtot27_imp2014)) %>% 
+  filter(is.na(cogtot27_imp2016)) %>% 
+  filter(is.na(cogtot27_imp2018)) %>% 
+  filter(is.na(cogtot27_imp2020))  
+
+
+data_lw2 <- data_lw2 %>% 
+  mutate(cogfunction2002 = ifelse(cogfunction2002 >= 2, 1, 0)) %>%
+  mutate(cogfunction2004 = ifelse(cogfunction2004 >= 2, 1, 0)) %>%
+  mutate(cogfunction2006 = ifelse(cogfunction2006 >= 2, 1, 0)) %>%
+  mutate(cogfunction2008 = ifelse(cogfunction2008 >= 2, 1, 0)) %>%
+  mutate(cogfunction2010 = ifelse(cogfunction2010 >= 2, 1, 0)) %>%
+  mutate(cogfunction2012 = ifelse(cogfunction2012 >= 2, 1, 0)) %>%
+  mutate(cogfunction2014 = ifelse(cogfunction2014 >= 2, 1, 0)) %>%
+  mutate(cogfunction2016 = ifelse(cogfunction2016 >= 2, 1, 0)) %>%
+  mutate(cogfunction2018 = ifelse(cogfunction2018 >= 2, 1, 0)) %>%
+  mutate(cogfunction2020 = ifelse(cogfunction2020 >= 2, 1, 0))
+
+
+rand_hrs2$hhidpn <- as.character(rand_hrs2$hhidpn)
+
+rand_hrs2 <-  rand_hrs2 %>% 
+  mutate(r6ticsx = r6imrc + r6dlrc + r6ser7 + r6bwc20) %>% 
+  mutate(r7ticsx = r7imrc + r7dlrc + r7ser7 + r7bwc20) %>% 
+  mutate(r8ticsx = r8imrc + r8dlrc + r8ser7 + r8bwc20) %>% 
+  mutate(r9ticsx = r9imrc + r9dlrc + r9ser7 + r9bwc20) %>% 
+  mutate(r10ticsx = r10imrc + r10dlrc + r10ser7 + r10bwc20) %>% 
+  mutate(r11ticsx = r11imrc + r11dlrc + r11ser7 + r11bwc20) %>% 
+  mutate(r12ticsx = r12imrc + r12dlrc + r12ser7 + r12bwc20) %>% 
+  mutate(r13ticsx = r13imrc + r13dlrc + r13ser7 + r13bwc20) %>%
+  mutate(r14ticsx = r14imrc + r14dlrc + r14ser7 + r14bwc20) %>%
+  mutate(r15ticsx = r15imrc + r15dlrc + r15ser7 + r15bwc20) 
+
+
+
+rand_hrs2 <- rand_hrs2 %>% 
+  mutate(r6tics = ifelse(r6ticsx < 12, 1, 0)) %>%
+  mutate(r7tics = ifelse(r7ticsx < 12, 1, 0)) %>%
+  mutate(r8tics = ifelse(r8ticsx < 12, 1, 0)) %>%
+  mutate(r9tics = ifelse(r9ticsx < 12, 1, 0)) %>%
+  mutate(r10tics = ifelse(r10ticsx < 12, 1, 0)) %>%
+  mutate(r11tics = ifelse(r11ticsx < 12, 1, 0)) %>%
+  mutate(r12tics = ifelse(r12ticsx < 12, 1, 0)) %>%
+  mutate(r13tics = ifelse(r13ticsx < 12, 1, 0)) %>%
+  mutate(r14tics = ifelse(r14ticsx < 12, 1, 0)) %>%
+  mutate(r15tics = ifelse(r15ticsx  < 12, 1, 0))
+
+df_combined2 <- full_join(
+  rand_hrs2,
+  data_lw2,
+  by = "hhidpn"
+)
+
+df_combined2 <- df_combined2 %>%
+  mutate(
+    final_2002 = coalesce(r6tics, cogfunction2002),
+    final_2004 = coalesce(r7tics, cogfunction2004),
+    final_2006 = coalesce(r8tics, cogfunction2006),
+    final_2008 = coalesce(r9tics, cogfunction2008),
+    final_2010 = coalesce(r10tics, cogfunction2010),
+    final_2012 = coalesce(r11tics, cogfunction2012),
+    final_2014 = coalesce(r12tics, cogfunction2014),
+    final_2016 = coalesce(r13tics, cogfunction2016),
+    final_2018 = coalesce(r14tics, cogfunction2018),
+    final_2020 = coalesce(r15tics, cogfunction2020)
+  )
+
+df_combined2 %>%
+  summarise(
+    r6tics_NA = sum(is.na(r6tics)),
+    r6tics_nonNA = sum(!is.na(r6tics)),
+    cogfunction2002_NA = sum(is.na(cogfunction2002)),
+    cogfunction2002_nonNA = sum(!is.na(cogfunction2002)),
+    final_NA = sum(is.na(final_2002)),
+    final_nonNA = sum(!is.na(final_2002))
+  )
+sum(is.na(df_combined2$r6tics) & !is.na(df_combined2$cogfunction2002))  
+
+
+
+df_combined2 <- df_combined2 %>% 
+  dplyr::select(!r6tics) %>% 
+  dplyr::select(!r7tics) %>% 
+  dplyr::select(!r8tics) %>% 
+  dplyr::select(!r9tics) %>% 
+  dplyr::select(!r10tics) %>% 
+  dplyr::select(!r11tics) %>% 
+  dplyr::select(!r12tics) %>% 
+  dplyr::select(!r13tics) %>% 
+  dplyr::select(!r14tics) %>% 
+  dplyr::select(!r15tics)
+
+df_combined2 <- df_combined2 %>% 
+  rename(
+    r6tics = final_2002,
+    r7tics = final_2004,
+    r8tics = final_2006,
+    r9tics = final_2008,
+    r10tics = final_2010,
+    r11tics = final_2012,
+    r12tics = final_2014,
+    r13tics = final_2016,
+    r14tics = final_2018,
+    r15tics = final_2020
+  )
+  
+
+```
+
+# Email Use
+
+## Filtering and variable selection
+
+```{r}
+# Filter by age if needed
+rand_hrs_age2 <- df_combined2
+#%>% 
+ # filter(r6agey_e >= 65)
+
+#rm(df_combined)
+
+
+#rm(rand_hrs)
+
+rand_hrs_email2 <- rand_hrs_age2 
+#%>% 
+#  filter(!is.na(r6email))
+
+#rm(rand_hrs_age)
+
+
+
+rand_hrs_email2 <- rand_hrs_email2 %>% 
+  dplyr::select(
+    hhidpn,
+    ragender,
+    raeducl,
+    raracem,
+    contains("rural"),
+    starts_with("r6"),
+    starts_with("r7"),
+    starts_with("r8"),
+    starts_with("r9"),
+    starts_with("r10"),
+    starts_with("r11"),
+    starts_with("r12"),
+    starts_with("r13"),
+    starts_with("r14"),
+    starts_with("r15")
+    ) %>% 
+  dplyr::select(
+    hhidpn,
+    ragender,
+    raeducl,
+    contains("agey_e"),
+    contains("socwk"),
+    contains("mo"),
+    contains("dy"),
+    contains("yr"),
+    contains("age_y"),
+    contains("rural"),
+    contains("sight"),
+    contains("urinai"),
+    contains("rested"),
+    contains("iadltot_h"),
+    contains("adltot6"),
+    contains("mobilsev"),
+    contains("email"),
+    contains("lowermob"),
+    contains("angin"),
+    contains("conhrtf"),
+    contains("arthlmt"),
+    contains("jointr"),
+    contains("hrtsrg"),
+    contains("bmicat"),
+    contains("painlv"),
+    contains("hearing"),
+    contains("mstat"),
+    contains("orient"),
+    contains("ser7"),
+    contains("imrc"),
+    contains("dlrc"),
+    contains("cesd"),
+    contains("hibp"),
+    contains("diab"),
+    contains("cancr"),
+    contains("lung"),
+    contains("heart"),
+    contains("strok"),
+    contains("arthr"),
+    contains("raracem"),
+    contains("bwc20"),
+    contains("tics")
+  )
+  
+
+rand_hrs_email2 <- rand_hrs_email2 %>% 
+  dplyr::select(!contains("smok")) %>% 
+  dplyr::select(!contains("mammo")) %>% 
+  dplyr::select(!contains("mom")) %>% 
+  dplyr::select(!contains("cmode")) %>% 
+  dplyr::select(!contains("money")) %>% 
+  dplyr::select(!contains("promot")) %>% 
+  dplyr::select(!contains("mov")) %>% 
+  dplyr::select(!contains("mon")) %>% 
+  dplyr::select(!contains("fmo")) %>%
+  dplyr::select(!contains("fdy")) %>%
+  dplyr::select(!contains("fyr")) %>% 
+  dplyr::select(!contains("mobm")) %>%
+  dplyr::select(!contains("moba")) %>%
+  dplyr::select(!contains("sevm")) %>%
+  dplyr::select(!contains("seva")) %>%
+  dplyr::select(!contains("forient")) %>% 
+  dplyr::select(!contains("hlp")) %>% 
+  dplyr::select(!contains("wendy")) %>% 
+  dplyr::select(!contains("jpd")) %>% 
+  dplyr::select(!contains("ret")) %>% 
+  dplyr::select(!contains("cmp")) %>% 
+  dplyr::select(!contains("pln")) %>% 
+  dplyr::select(!contains("mcr"))
+
+gc()
+```
+
+```{r}
+# Create TICS variables
+rand_hrs_email2 <- rand_hrs_email2 %>% 
+  filter(!is.na(r6email))
+
+
+# Account for reverse causality by removing those with MCI up to wave 9
+rand_hrs_email2 <- rand_hrs_email2 %>% 
+  filter(!r6tics == 1) %>%  
+  filter(!r7tics == 1) %>%  
+  filter(!r8tics == 1) %>%  
+  filter(!r9tics == 1)
+```
+
+```{r}
+rand_hrs_email_filter <- rand_hrs_email %>% 
+  anti_join(rand_hrs_email2, by = "hhidpn")
+```
+
+```{r}
+t.test(rand_hrs_email_filter$r6agey_e, rand_hrs_email2$r6agey_e)
+```
+
+```{r}
+t.test(rand_hrs_email_filter$r6email, rand_hrs_email2$r6email)
+```
+
+```{r}
+t.test(rand_hrs_email_filter$r10tics, rand_hrs_email2$r10tics)
+```
+
+```{r}
+t.test(rand_hrs_email_filter$r15tics, rand_hrs_email2$r15tics)
+```
+
+```{r}
+t.test(rand_hrs_email_filter$raeducl, rand_hrs_email2$raeducl)
 ```
